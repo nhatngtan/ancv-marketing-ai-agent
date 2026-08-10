@@ -1,0 +1,25 @@
+param([string]$ProjectId, [string]$Region = 'asia-southeast1', [string]$ExpectedAccount = 'ancv.marketing@gmail.com')
+$ErrorActionPreference = 'Stop'
+if (-not $ProjectId) { throw 'ProjectId is required.' }
+$gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
+$account = & $gcloud config get-value account 2>$null
+$firebaseAccount = (firebase.cmd login:list | Select-String 'Logged in as' | ForEach-Object { ($_ -split ' ')[-1] })
+if ($account -ne $ExpectedAccount -or $firebaseAccount -ne $ExpectedAccount) { throw 'ACCOUNT MISMATCH: deploy blocked.' }
+
+npm.cmd run verify
+& $gcloud run deploy ancv-marketing-backend --source . --project $ProjectId --region $Region --service-account="ancv-cloud-run@$ProjectId.iam.gserviceaccount.com" --allow-unauthenticated --set-env-vars="NODE_ENV=production" --quiet
+$backendUrl = & $gcloud run services describe ancv-marketing-backend --project $ProjectId --region $Region --format='value(status.url)'
+& $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --set-env-vars="TASK_AUDIENCE=$backendUrl,AUTOMATION_SERVICE_ACCOUNTS=ancv-workflows@$ProjectId.iam.gserviceaccount.com\,ancv-automation@$ProjectId.iam.gserviceaccount.com" --quiet
+& $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
+& $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
+& $gcloud workflows deploy ancv-health-check --source=infra/workflows/health-check.yaml --location=$Region --service-account="ancv-workflows@$ProjectId.iam.gserviceaccount.com" --project=$ProjectId
+& $gcloud workflows deploy ancv-publish-content --source=infra/workflows/publish-content.yaml --location=$Region --service-account="ancv-workflows@$ProjectId.iam.gserviceaccount.com" --project=$ProjectId
+& $gcloud tasks queues describe ancv-jobs --location=$Region --project=$ProjectId 2>$null
+if ($LASTEXITCODE -ne 0) { & $gcloud tasks queues create ancv-jobs --location=$Region --project=$ProjectId --max-attempts=3 --max-concurrent-dispatches=10 --max-dispatches-per-second=5 }
+& $gcloud scheduler jobs describe ancv-daily-analytics --location=$Region --project=$ProjectId 2>$null
+if ($LASTEXITCODE -ne 0) {
+  & $gcloud scheduler jobs create http ancv-daily-analytics --location=$Region --project=$ProjectId --schedule='15 2 * * *' --time-zone='Asia/Ho_Chi_Minh' --uri="$backendUrl/v1/scheduler/analytics/daily" --http-method=POST --oidc-service-account-email="ancv-automation@$ProjectId.iam.gserviceaccount.com" --oidc-token-audience=$backendUrl --max-retry-attempts=2 --attempt-deadline=60s
+}
+firebase.cmd use $ProjectId
+firebase.cmd deploy --only firestore:rules,firestore:indexes,storage,hosting --project $ProjectId
+Write-Output "DEPLOY_OK backend=$backendUrl"

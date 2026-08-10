@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function hasRole(roles) { return signedIn() && userDoc().data.status == 'active' && userDoc().data.role in roles; }
+    function admin() { return hasRole(['admin']); }
+    function editor() { return hasRole(['admin', 'editor']); }
+    function validAuditOnCreate() { return request.resource.data.createdBy == request.auth.uid && request.resource.data.keys().hasAll(['status', 'createdAt', 'updatedAt', 'createdBy']); }
+    function preservesOwnership() { return request.resource.data.createdBy == resource.data.createdBy; }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || admin());
+      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'viewer' && request.resource.data.status == 'pending';
+      allow update: if admin() || (signedIn() && request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']));
+      allow delete: if admin();
+    }
+
+    match /{collectionName}/{documentId} {
+      allow read: if signedIn() && collectionName in [
+        'contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'connectors',
+        'connectorTests', 'socialMetrics', 'websiteMetrics', 'seoMetrics', 'reports',
+        'workflowRuns', 'systemAlerts', 'systemSettings'
+      ];
+      allow create: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && validAuditOnCreate();
+      allow update: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && preservesOwnership();
+      allow delete: if admin() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'];
+      allow write: if admin() && collectionName in ['connectors', 'connectorTests', 'systemSettings', 'systemAlerts'];
+    }
+
+    match /systemCounters/{counterId} { allow read, write: if false; }
+    match /_health/{documentId} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
+

@@ -1,0 +1,20 @@
+main:
+  params: [args]
+  steps:
+    - validate:
+        switch:
+          - condition: ${not("baseUrl" in args)}
+            raise: "baseUrl is required"
+    - callHealth:
+        call: http.get
+        args:
+          url: ${args.baseUrl + "/health"}
+          auth:
+            type: OIDC
+        result: healthResponse
+    - returnResult:
+        return:
+          workflow: ancv-health-check
+          statusCode: ${healthResponse.code}
+          body: ${healthResponse.body}
+

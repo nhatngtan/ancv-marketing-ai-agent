@@ -1,0 +1,40 @@
+main:
+  params: [args]
+  steps:
+    - initialize:
+        assign:
+          - results: {}
+    - publishIndependently:
+        parallel:
+          shared: [results]
+          for:
+            value: target
+            in: ${args.targets}
+            steps:
+              - publishOne:
+                  try:
+                    call: http.post
+                    args:
+                      url: ${args.baseUrl + "/v1/publishing/tasks/publish"}
+                      auth:
+                        type: OIDC
+                      body: ${target}
+                    result: response
+                  except:
+                    as: error
+                    steps:
+                      - recordSafeFailure:
+                          assign:
+                            - results[target.platform]:
+                                status: "needs_action"
+                                error: ${error.message}
+                  next: recordSuccess
+              - recordSuccess:
+                  assign:
+                    - results[target.platform]: ${response.body}
+    - summarize:
+        return:
+          contentId: ${args.contentId}
+          platformResults: ${results}
+          note: "Platform failures are isolated; successful publications are not rolled back."
+

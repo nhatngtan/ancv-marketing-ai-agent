@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.firebase/
+.firebaserc
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+service-account*.json
+credentials*.json
+.DS_Store
+

@@ -1,0 +1,15 @@
+jobs:
+  - name: ancv-daily-analytics
+    schedule: "15 2 * * *"
+    timezone: Asia/Ho_Chi_Minh
+    endpoint: /v1/scheduler/analytics/daily
+    enabledStatuses: [available, partially_available]
+  - name: ancv-weekly-report
+    schedule: "0 8 * * 1"
+    timezone: Asia/Ho_Chi_Minh
+    endpoint: /v1/scheduler/reports/weekly
+  - name: ancv-monthly-report
+    schedule: "0 8 1 * *"
+    timezone: Asia/Ho_Chi_Minh
+    endpoint: /v1/scheduler/reports/monthly
+
