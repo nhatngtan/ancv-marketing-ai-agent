@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
-import pinoHttp from 'pino-http';
+import { pinoHttp } from 'pino-http';
 import { ZodError } from 'zod';
 import { checkFirestore } from './firebase.js';
 import { config } from './config.js';

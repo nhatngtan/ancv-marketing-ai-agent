@@ -154,7 +154,7 @@ function ConnectorsPage({ connectors, onToast }: { connectors: ConnectorRecord[]
 
 function HealthPage({ connectors }: { connectors: ConnectorRecord[] }) {
   const now = new Date().toISOString();
-  const groups = useMemo(() => ({
+  const groups = useMemo<Record<string, HealthItem[]>>(() => ({
     Core: [
       { key: 'web', label: 'Web App', status: 'operational', checkedAt: now }, { key: 'firebase', label: 'Firebase', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now },
       { key: 'firestore', label: 'Firestore', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'storage', label: 'Storage', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now },
@@ -163,7 +163,7 @@ function HealthPage({ connectors }: { connectors: ConnectorRecord[] }) {
     Publishing: connectors.filter((item) => !['ga4','search_console'].includes(item.platform)).map((item) => ({ key: item.platform, label: platformLabels[item.platform], status: item.mode === 'manual' ? 'manual' : 'partial', checkedAt: now })),
     Analytics: [{ key: 'ga4', label: 'GA4', status: 'configuration_required', checkedAt: now }, { key: 'gsc', label: 'Search Console', status: 'configuration_required', checkedAt: now }, { key: 'social', label: 'Social Analytics', status: 'configuration_required', checkedAt: now }],
     Automation: [{ key: 'flow', label: 'Flow Worker', status: 'manual', checkedAt: now, detail: 'Experimental — manual fallback sẵn sàng' }],
-  } satisfies Record<string, HealthItem[]>), [connectors, now]);
+  }), [connectors, now]);
   const healthVi: Record<HealthItem['status'], string> = { operational: 'Hoạt động', partial: 'Khả dụng một phần', configuration_required: 'Cần cấu hình', pending_review: 'Chờ phê duyệt', error: 'Lỗi', manual: 'Thủ công' };
   return <><div className="page-heading"><div><span className="eyebrow">SAFE FAILURE</span><h1>Tình trạng hệ thống</h1><p>Mỗi thành phần được giám sát độc lập; lỗi connector không làm Core dừng.</p></div><div className="health-summary"><span></span>Core đang hoạt động</div></div><div className="health-groups">{Object.entries(groups).map(([name, items]) => <section className="panel" key={name}><div className="panel-head"><h2>{name}</h2><small>Dữ liệu cập nhật lần cuối: {new Date().toLocaleTimeString('vi-VN')}</small></div>{items.map((item) => <div className="health-row" key={item.key}><div className={`health-indicator ${item.status}`}></div><div><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</div><Badge tone={item.status === 'operational' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{healthVi[item.status]}</Badge></div>)}</section>)}</div></>;
 }
@@ -172,4 +172,3 @@ function PlaceholderPage({ page, contents }: { page: PageKey; contents: ContentR
   const messages: Partial<Record<PageKey, string>> = { schedule: 'Lịch nội bộ đọc từ Firestore; connector lỗi không làm mất lịch.', social: 'Theo dõi kết quả đăng độc lập theo từng nền tảng.', website: 'Sẵn sàng cho API-first hoặc quy trình copy/upload thủ công.', seo: 'Search Console sẽ được bật sau feasibility test property access.', reports: 'Báo cáo chỉ dùng nguồn có dữ liệu và luôn ghi rõ nguồn thiếu.', settings: 'Cấu hình hệ thống, vai trò và chính sách connector.' };
   return <><div className="page-heading"><div><span className="eyebrow">CORE MODULE</span><h1>{pageTitle(page)}</h1><p>{messages[page]}</p></div></div><section className="panel placeholder"><Sparkles size={28}/><h2>Module nền móng đã sẵn sàng</h2><p>Dữ liệu hiện có: {contents.length} Content. Chức năng nâng cao sẽ được mở theo roadmap mà không thay đổi kiến trúc Core.</p></section></>;
 }
-

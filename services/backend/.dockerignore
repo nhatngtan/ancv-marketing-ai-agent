@@ -1,9 +1,0 @@
-node_modules
-dist
-coverage
-.env*
-*.json
-!package.json
-!package-lock.json
-!tsconfig*.json
-

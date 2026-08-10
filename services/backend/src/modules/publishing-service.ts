@@ -19,13 +19,14 @@ const manualSchema = z.object({
 publishingRouter.post('/jobs/:jobId/manual-complete', requireFirebaseEditor, async (request, response, next) => {
   try {
     const input = manualSchema.parse(request.body);
-    await db().collection('publishingJobs').doc(request.params.jobId).set({
+    const jobId = String(request.params.jobId);
+    await db().collection('publishingJobs').doc(jobId).set({
       ...input,
       status: 'published',
       mode: 'manual',
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
-    response.json({ ok: true, jobId: request.params.jobId, status: 'published' });
+    response.json({ ok: true, jobId, status: 'published' });
   } catch (error) { next(error); }
 });
 

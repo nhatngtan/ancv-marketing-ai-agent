@@ -2,7 +2,11 @@ packages:
   - apps/*
   - services/*
   - packages/*
-onlyBuiltDependencies:
-  - '@firebase/util'
-  - esbuild
-  - protobufjs
+allowBuilds:
+  '@firebase/util': set this to true or false
+  esbuild: set this to true or false
+  protobufjs: set this to true or false
+allowBuilds:
+  '@firebase/util': true
+  esbuild: true
+  protobufjs: true

@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.firebase
+.env*
+service-account*.json
+credentials*.json
+apps/web
+docs
+firebase
+infra
+scripts
+

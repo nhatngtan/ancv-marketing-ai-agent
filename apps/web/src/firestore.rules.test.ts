@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
@@ -49,4 +49,3 @@ suite('Firestore production rules', () => {
     await assertFails(getDoc(doc(environment.authenticatedContext('admin-user').firestore(), 'systemCounters', 'video-2026')));
   });
 });
-
