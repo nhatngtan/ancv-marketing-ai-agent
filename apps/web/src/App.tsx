@@ -12,6 +12,9 @@ import { Badge } from './components/Badge';
 import { EmptyState } from './components/EmptyState';
 import { StatCard } from './components/StatCard';
 import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
+import { auth, logout } from './lib/firebase';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { DEFAULT_CONNECTORS } from '@ancv/shared';
 import { createContent, subscribeConnectors, subscribeContents, updateContent } from './lib/repository';
 
 type PageKey = 'overview' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
@@ -42,9 +45,21 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCreate, setShowCreate] = useState<ContentType | null>(null);
   const [toast, setToast] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(!firebaseConfigured);
 
-  useEffect(() => subscribeContents(setContents), []);
-  useEffect(() => subscribeConnectors(setConnectors), []);
+  useEffect(() => {
+    if (!auth) return;
+    return onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setAuthReady(true); });
+  }, []);
+  useEffect(() => {
+    if (firebaseConfigured && !user) { setContents([]); return; }
+    return subscribeContents(setContents);
+  }, [user]);
+  useEffect(() => {
+    if (firebaseConfigured && !user) { setConnectors(DEFAULT_CONNECTORS); return; }
+    return subscribeConnectors(setConnectors);
+  }, [user]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 3000); return () => clearTimeout(timer); }, [toast]);
 
   const openPage = (key: PageKey) => { setPage(key); setMenuOpen(false); };
@@ -63,21 +78,27 @@ export default function App() {
         <div><p>QUẢN TRỊ MARKETING AI AGENT - ANCV</p><span>{pageTitle(page)}</span></div>
         <div className="account">
           {!firebaseConfigured && <Badge tone="warning">Chế độ cấu hình</Badge>}
-          <button onClick={async () => { try { await loginWithGoogle(); } catch { setToast('Firebase chưa được cấu hình cho đăng nhập Google.'); } }}><LogIn size={17}/><span>Đăng nhập Google</span></button>
+          {user ? <button onClick={() => logout()}><span>{user.email}</span></button> : <button onClick={async () => { try { await loginWithGoogle(); } catch { setToast('Không thể đăng nhập Google. Hãy kiểm tra quyền tài khoản.'); } }}><LogIn size={17}/><span>Đăng nhập Google</span></button>}
         </div>
       </header>
       <section className="workspace">
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
-        {page === 'overview' && <Overview contents={contents} connectors={connectors} onNavigate={openPage} />}
-        {contentType && <ContentPage type={contentType} contents={contents.filter((item) => item.type === contentType)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
-        {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
-        {page === 'health' && <HealthPage connectors={connectors}/>} 
-        {['schedule','social','website','seo','reports','settings'].includes(page) && <PlaceholderPage page={page} contents={contents}/>} 
+        {firebaseConfigured && authReady && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
+          {page === 'overview' && <Overview contents={contents} connectors={connectors} onNavigate={openPage} />}
+          {contentType && <ContentPage type={contentType} contents={contents.filter((item) => item.type === contentType)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
+          {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
+          {page === 'health' && <HealthPage connectors={connectors}/>} 
+          {['schedule','social','website','seo','reports','settings'].includes(page) && <PlaceholderPage page={page} contents={contents}/>} 
+        </>}
       </section>
     </main>
     {showCreate && <CreateContentModal type={showCreate} onClose={() => setShowCreate(null)} onSaved={() => { setShowCreate(null); setToast('Đã tạo Content mới.'); }}/>} 
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}
   </div>;
+}
+
+function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
+  return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Tài khoản quản trị chính: ancv.marketing@gmail.com</small></section>;
 }
 
 function Overview({ contents, connectors, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; onNavigate: (page: PageKey) => void }) {
