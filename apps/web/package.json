@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ancv/shared": "*",
+    "@ancv/shared": "workspace:*",
     "firebase": "^12.6.0",
     "lucide-react": "^0.553.0",
     "react": "^19.2.0",
