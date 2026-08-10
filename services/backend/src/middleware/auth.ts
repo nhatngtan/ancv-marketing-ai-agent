@@ -27,6 +27,7 @@ export async function requireAutomationIdentity(request: Request, response: Resp
     const email = ticket.getPayload()?.email ?? '';
     const allowed = new Set((process.env.AUTOMATION_SERVICE_ACCOUNTS ?? '').split(',').filter(Boolean));
     if (!allowed.has(email)) { response.status(403).json({ error: 'AUTOMATION_IDENTITY_DENIED' }); return; }
+    response.locals.identity = { uid: email, email, role: 'automation' };
     next();
   } catch { response.status(401).json({ error: 'INVALID_AUTOMATION_TOKEN' }); }
 }

@@ -7,4 +7,7 @@ export const config = {
   openAIImageModel: process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2',
   ga4PropertyId: process.env.GA4_PROPERTY_ID ?? '',
   searchConsoleSiteUrl: process.env.SEARCH_CONSOLE_SITE_URL ?? '',
+  wordpressBaseUrl: process.env.WORDPRESS_BASE_URL ?? '',
+  wordpressUsername: process.env.WORDPRESS_USERNAME ?? '',
+  wordpressApplicationPassword: process.env.WORDPRESS_APPLICATION_PASSWORD ?? '',
 };

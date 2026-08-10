@@ -13,12 +13,20 @@ if ($LASTEXITCODE -ne 0) { throw 'Cloud Run deployment failed.' }
 $backendUrl = & $gcloud run services describe ancv-marketing-backend --project $ProjectId --region $Region --format='value(status.url)'
 & $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --env-vars-file=infra/cloud-run.env.yaml --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Cloud Run environment update failed.' }
-$openAIVersion = & $gcloud secrets versions list openai-api-key --project=$ProjectId --filter='state=ENABLED' --limit=1 --format='value(name)' 2>$null
+$openAIVersion = & $gcloud secrets versions list openai-api-key --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
 if ($openAIVersion) {
   & $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --update-secrets='OPENAI_API_KEY=openai-api-key:latest' --quiet
   if ($LASTEXITCODE -ne 0) { throw 'OpenAI Secret Manager binding failed.' }
 } else {
   Write-Warning 'openai-api-key has no enabled version; OpenAI remains configuration_required.'
+}
+$wordpressUserVersion = & $gcloud secrets versions list wordpress-username --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
+$wordpressPasswordVersion = & $gcloud secrets versions list wordpress-application-password --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
+if ($wordpressUserVersion -and $wordpressPasswordVersion) {
+  & $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --update-secrets='WORDPRESS_USERNAME=wordpress-username:latest,WORDPRESS_APPLICATION_PASSWORD=wordpress-application-password:latest' --quiet
+  if ($LASTEXITCODE -ne 0) { throw 'WordPress Secret Manager binding failed.' }
+} else {
+  Write-Warning 'WordPress credential secrets have no enabled versions; Website remains semi_automatic.'
 }
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null

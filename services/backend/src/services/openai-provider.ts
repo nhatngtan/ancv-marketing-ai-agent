@@ -13,11 +13,25 @@ export interface AIProvider {
   generatePlatformCopy(input: { source: string; platform: string }): Promise<string>;
   writeArticle(input: { topic: string; brief?: string }): Promise<string>;
   generateImage(prompt: string): Promise<{ base64: string; mimeType: 'image/png' }>;
+  smokeTest(includeImage: boolean): Promise<OpenAISmokeEvidence>;
   getHealth(): { status: 'operational' | 'configuration_required'; textModel: string; imageModel: string };
 }
 
+export interface OpenAISmokeEvidence {
+  checkedAt: string;
+  text: {
+    status: 'passed'; model: string; requestId: string | null; outputMatched: true;
+    inputTokens: number | null; outputTokens: number | null; totalTokens: number | null;
+  };
+  image: {
+    status: 'passed' | 'not_requested'; model: string; requestId: string | null;
+    size: '1024x1024'; quality: 'low'; bytes: number | null;
+    inputTokens: number | null; outputTokens: number | null; totalTokens: number | null;
+  };
+}
+
 export class OpenAIConfigurationError extends Error {
-  constructor() { super('OPENAI_API_KEY chưa được cấu hình trong Secret Manager.'); }
+  constructor() { super('OPENAI_API_KEY chưa được cấu hình trong Secret Manager.'); this.name = 'OpenAIConfigurationError'; }
 }
 
 export class OpenAIProvider implements AIProvider {
@@ -95,6 +109,49 @@ export class OpenAIProvider implements AIProvider {
     const base64 = response.data?.[0]?.b64_json;
     if (!base64) throw new Error('OPENAI_IMAGE_EMPTY');
     return { base64, mimeType: 'image/png' };
+  }
+
+  async smokeTest(includeImage: boolean): Promise<OpenAISmokeEvidence> {
+    const client = this.requireClient();
+    const textResponse = await client.responses.create({
+      model: config.openAITextModel,
+      instructions: 'Return exactly ANCV_OK and nothing else.',
+      input: 'Health check',
+      max_output_tokens: 16,
+      reasoning: { effort: 'none' },
+      store: false,
+      text: { verbosity: 'low' },
+    });
+    if (textResponse.output_text.trim() !== 'ANCV_OK') throw new Error('OPENAI_SMOKE_OUTPUT_MISMATCH');
+    const textUsage = textResponse.usage;
+    const evidence: OpenAISmokeEvidence = {
+      checkedAt: new Date().toISOString(),
+      text: {
+        status: 'passed', model: textResponse.model, requestId: textResponse._request_id ?? null, outputMatched: true,
+        inputTokens: textUsage?.input_tokens ?? null, outputTokens: textUsage?.output_tokens ?? null, totalTokens: textUsage?.total_tokens ?? null,
+      },
+      image: {
+        status: 'not_requested', model: config.openAIImageModel, requestId: null,
+        size: '1024x1024', quality: 'low', bytes: null, inputTokens: null, outputTokens: null, totalTokens: null,
+      },
+    };
+    if (!includeImage) return evidence;
+    const imageResponse = await client.images.generate({
+      model: config.openAIImageModel,
+      prompt: 'A minimal flat green shield icon on a plain white background, no text.',
+      size: '1024x1024', quality: 'low', output_format: 'png', n: 1,
+    });
+    const encoded = imageResponse.data?.[0]?.b64_json;
+    if (!encoded) throw new Error('OPENAI_IMAGE_EMPTY');
+    evidence.image = {
+      status: 'passed', model: config.openAIImageModel,
+      requestId: (imageResponse as typeof imageResponse & { _request_id?: string | null })._request_id ?? null,
+      size: '1024x1024', quality: 'low', bytes: Buffer.from(encoded, 'base64').byteLength,
+      inputTokens: imageResponse.usage?.input_tokens ?? null,
+      outputTokens: imageResponse.usage?.output_tokens ?? null,
+      totalTokens: imageResponse.usage?.total_tokens ?? null,
+    };
+    return evidence;
   }
 
   private requireClient(): OpenAI {

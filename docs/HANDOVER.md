@@ -25,14 +25,16 @@ Application không hard-code email cá nhân để quyết định role. Quyền
 - [ ] Xác nhận Billing owner/contact và phương thức thanh toán của Công ty.
 - [ ] Transfer GitHub repository hoặc chuyển vào organization; rà lại Actions, deploy key và branch protection.
 - [ ] Đổi OpenAI API key trong Secret Manager sang key Công ty; source code không cần sửa.
+- [ ] Xác nhận `openai-api-key` thuộc billing/project API của Công ty, rotate version rồi chạy lại Responses + Image smoke test.
 - [ ] Kiểm tra owner/admin và khả năng transfer của tất cả Google OAuth clients.
 - [ ] Kiểm tra Meta Developer App, Business Verification và Page ownership.
 - [ ] Kiểm tra TikTok Developer App, audit và owner/admin.
 - [ ] Kiểm tra LinkedIn App, organization admin và Community Management review.
 - [ ] Kiểm tra Zalo App/OA owner và token lifecycle.
-- [ ] Cấp GA4 property role cho production Service Account hoặc tài khoản doanh nghiệp phù hợp.
-- [ ] Cấp Search Console property role cho production Service Account hoặc tài khoản doanh nghiệp phù hợp.
-- [ ] Kiểm tra Website CMS owner, API credential, domain/DNS và hosting.
+- [ ] Chọn/tạo GA4 property ANCV, cấp Viewer cho production Service Account, cấu hình numeric property ID và chạy `runReport`.
+- [ ] Verify `sc-domain:anninhcanhve.com`, cấp quyền cho production Service Account, cấu hình site URL và chạy `searchAnalytics.query`.
+- [ ] Tạo WordPress user kỹ thuật quyền tối thiểu và Application Password; thêm version cho hai secret, test `/users/me`, bài nháp và media.
+- [ ] Kiểm tra Website CMS owner, domain/DNS, hosting và khả năng chuyển credential sang Corporate Admin.
 - [ ] Kiểm tra Google Flow subscription/session; Flow vẫn là experimental và không phải dependency.
 - [ ] Rotate/revoke credential development chỉ sau khi production credential đã test PASS.
 - [ ] Chạy lại toàn bộ API Feasibility Test và lưu evidence mới trong `connectorTests`.

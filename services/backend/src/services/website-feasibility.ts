@@ -36,18 +36,36 @@ export async function testWebsite(rawUrl: string): Promise<FeasibilityResult> {
     const generator = body.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)/i)?.[1] ?? '';
     const wordpressHint = /wordpress|wp-content|wp-includes/i.test(`${generator} ${body} ${homepage.response.headers.get('link') ?? ''}`);
     let apiRootPassed = false;
+    let applicationPasswordsAdvertised = false;
+    let postsCreateAdvertised = false;
+    let mediaCreateAdvertised = false;
     if (wordpressHint) {
       const endpoint = new URL('/wp-json/', homepage.finalUrl).toString();
       const api = await safeFetch(endpoint);
       apiRootPassed = api.response.ok && (api.response.headers.get('content-type') ?? '').includes('json');
+      if (apiRootPassed) {
+        const discovery = JSON.parse(await api.response.text()) as {
+          authentication?: Record<string, unknown>;
+          routes?: Record<string, { endpoints?: Array<{ methods?: string[] }> }>;
+        };
+        const supportsPost = (path: string) => discovery.routes?.[path]?.endpoints?.some((item) => item.methods?.includes('POST')) ?? false;
+        applicationPasswordsAdvertised = Boolean(discovery.authentication?.['application-passwords']);
+        postsCreateAdvertised = supportsPost('/wp/v2/posts');
+        mediaCreateAdvertised = supportsPost('/wp/v2/media');
+      }
     }
     return {
       platform: 'website', status: apiRootPassed ? 'partially_available' : 'manual_only', authenticationStatus: 'not_tested',
       publishingCapability: apiRootPassed ? 'partial' : 'unverified', analyticsCapability: 'unverified', scopes: [],
       quotaNotes: 'Quota phụ thuộc CMS/hosting; chưa có credential nên chưa test create/update/upload.', reviewStatus: 'not_tested',
       recommendedMode: apiRootPassed ? 'semi_automatic' : 'manual',
-      limitations: apiRootPassed ? ['Phát hiện WordPress REST API công khai; chưa test authentication, create/update article hoặc upload media.'] : ['Không xác minh được API CMS có thể publishing; dùng Manual Fallback.'],
-      evidence: { homepageRequest: 'passed', httpStatus: homepage.response.status, finalOrigin: homepage.finalUrl.origin, detectedGenerator: generator || null, wordpressHint, wordpressApiRootRequest: apiRootPassed ? 'passed' : wordpressHint ? 'failed' : 'not_applicable' },
+      limitations: apiRootPassed ? [applicationPasswordsAdvertised ? 'WordPress quảng bá Application Passwords và write routes; chưa có secret version để test authentication/create/upload thật.' : 'Phát hiện WordPress REST API; chưa xác minh authentication production hoặc write request.'] : ['Không xác minh được API CMS có thể publishing; dùng Manual Fallback.'],
+      evidence: {
+        homepageRequest: 'passed', httpStatus: homepage.response.status, finalOrigin: homepage.finalUrl.origin,
+        detectedGenerator: generator || null, wordpressHint,
+        wordpressApiRootRequest: apiRootPassed ? 'passed' : wordpressHint ? 'failed' : 'not_applicable',
+        applicationPasswordsAdvertised, postsCreateAdvertised, mediaCreateAdvertised,
+      },
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

@@ -58,10 +58,15 @@ Sau deploy, xác minh IAM: giữ nguyên hai Owner đã được phê duyệt; C
 
 ## Cấu hình Giai đoạn 2A
 
-- Secret container: `openai-api-key`. Chỉ gắn `OPENAI_API_KEY=openai-api-key:latest` vào Cloud Run sau khi đã có secret version hợp lệ.
+- Secret `openai-api-key` đã có version hợp lệ và được mount thành `OPENAI_API_KEY` trên Cloud Run; runtime access thuộc `ancv-cloud-run`.
 - Text model: `OPENAI_TEXT_MODEL` (mặc định cấu hình `gpt-5.6-terra`).
 - Image model: `OPENAI_IMAGE_MODEL` (mặc định `gpt-image-2`).
 - GA4: `GA4_PROPERTY_ID`; cấp Viewer cho `ancv-cloud-run@ancv-marketing-ai-agent.iam.gserviceaccount.com` trên đúng property trước khi test `runReport`.
 - Search Console: `SEARCH_CONSOLE_SITE_URL`; thêm đúng Service Account vào property trước khi test `searchAnalytics.query`.
+- Website: `WORDPRESS_BASE_URL=https://anninhcanhve.com`; secret containers `wordpress-username` và `wordpress-application-password`. Deploy script chỉ mount khi cả hai có version enabled.
+
+### Thêm WordPress credential an toàn
+
+Tạo Application Password trên user kỹ thuật WordPress có quyền tối thiểu. Thêm username/password thành secret version bằng Secret Manager, không ghi vào `.env` hoặc command history chia sẻ. Sau đó deploy lại; xác minh `/wp/v2/users/me?context=edit`, tạo bài ở trạng thái `draft`, upload media nhỏ và xóa/revoke dữ liệu test theo quy trình CMS.
 
 Không gắn ADC hoặc refresh token cá nhân vào Cloud Run. Việc thêm secret version và cấu hình property phải được thực hiện qua Secret Manager/Cloud Run environment, không commit `.env`.

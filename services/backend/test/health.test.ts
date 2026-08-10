@@ -16,4 +16,9 @@ describe('health endpoints', () => {
     expect(response.body.connectors).toHaveLength(8);
     expect(response.body.connectors[0]).toMatchObject({ mode: 'manual' });
   });
+  it('protects the production OpenAI smoke test with automation identity', async () => {
+    const response = await request(createApp()).post('/v1/ai/smoke-test').send({ includeImage: false });
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ error: 'AUTOMATION_AUTH_REQUIRED' });
+  });
 });

@@ -6,5 +6,6 @@ describe('OpenAI provider', () => {
     const provider = new OpenAIProvider();
     expect(provider.getHealth().status).toBe('configuration_required');
     await expect(provider.writeArticle({ topic: 'Test' })).rejects.toBeInstanceOf(OpenAIConfigurationError);
+    await expect(provider.smokeTest(false)).rejects.toBeInstanceOf(OpenAIConfigurationError);
   });
 });
