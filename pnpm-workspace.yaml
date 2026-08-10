@@ -2,4 +2,7 @@ packages:
   - apps/*
   - services/*
   - packages/*
-
+onlyBuiltDependencies:
+  - '@firebase/util'
+  - esbuild
+  - protobufjs
