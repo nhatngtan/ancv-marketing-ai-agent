@@ -11,7 +11,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Local verification failed; deployment stopped.
 & $gcloud run deploy ancv-marketing-backend --source . --project $ProjectId --region $Region --service-account="ancv-cloud-run@$ProjectId.iam.gserviceaccount.com" --allow-unauthenticated --set-env-vars="NODE_ENV=production" --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Cloud Run deployment failed.' }
 $backendUrl = & $gcloud run services describe ancv-marketing-backend --project $ProjectId --region $Region --format='value(status.url)'
-& $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --set-env-vars="TASK_AUDIENCE=$backendUrl,AUTOMATION_SERVICE_ACCOUNTS=ancv-workflows@$ProjectId.iam.gserviceaccount.com\,ancv-automation@$ProjectId.iam.gserviceaccount.com" --quiet
+& $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --env-vars-file=infra/cloud-run.env.yaml --quiet
+if ($LASTEXITCODE -ne 0) { throw 'Cloud Run environment update failed.' }
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud workflows deploy ancv-health-check --source=infra/workflows/health-check.yaml --location=$Region --service-account="ancv-workflows@$ProjectId.iam.gserviceaccount.com" --project=$ProjectId

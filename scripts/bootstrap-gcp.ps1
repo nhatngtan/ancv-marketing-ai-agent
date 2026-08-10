@@ -20,7 +20,7 @@ if (-not $existing) {
 
 $coreApis = @(
   'firebase.googleapis.com','firestore.googleapis.com','identitytoolkit.googleapis.com','firebaserules.googleapis.com',
-  'firebasehosting.googleapis.com','storage.googleapis.com','logging.googleapis.com','iam.googleapis.com','iamcredentials.googleapis.com'
+  'firebasehosting.googleapis.com','firebasestorage.googleapis.com','storage.googleapis.com','logging.googleapis.com','iam.googleapis.com','iamcredentials.googleapis.com'
 )
 & $gcloud services enable $coreApis --project $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Failed to enable one or more core APIs.' }
@@ -44,7 +44,9 @@ $bindings = @(
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/storage.objectAdmin' },
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/secretmanager.secretAccessor' },
   @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/cloudtasks.enqueuer' },
-  @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/workflows.invoker' }
+  @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/workflows.invoker' },
+  @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/logging.logWriter' },
+  @{ Member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com"; Role='roles/logging.logWriter' }
 )
 foreach ($binding in $bindings) {
   & $gcloud projects add-iam-policy-binding $ProjectId "--member=$($binding.Member)" "--role=$($binding.Role)" --quiet | Out-Null

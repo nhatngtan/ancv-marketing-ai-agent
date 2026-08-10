@@ -10,10 +10,12 @@
 - Transitional Owner: `ancv.marketing@gmail.com` remains until the Google Owner invitation is accepted.
 - Firestore: đã tạo, production rules và indexes đã deploy, delete protection đã bật.
 - Firebase Authentication: Google provider đã bật; user quản trị chính đã seed role `admin`.
-- Firebase Storage: chưa tạo bucket vì project chưa liên kết Billing.
-- Cloud Run, Workflows, Cloud Tasks, Scheduler, Secret Manager: source/manifest/IAM đã chuẩn bị; deployment chờ Billing.
-
-Không đánh dấu các dịch vụ chờ Billing là đã deploy. Sau khi liên kết Billing, chạy lại bootstrap rồi deploy và health test theo hướng dẫn bên dưới.
+- Firebase Storage: bucket `ancv-marketing-ai-agent.firebasestorage.app` đã tạo tại `ASIA-SOUTHEAST1`; production rules đã deploy.
+- Cloud Run: `ancv-marketing-backend` đã deploy tại `asia-southeast1`.
+- Workflows: `ancv-health-check` và `ancv-publish-content` đang ACTIVE.
+- Cloud Tasks: queue `ancv-jobs` đang RUNNING, tối đa 3 lần thử.
+- Cloud Scheduler: `ancv-daily-analytics` đang ENABLED, OIDC end-to-end đã trả HTTP 200.
+- Billing: đã liên kết Billing account của `nhat.ngtan@gmail.com`.
 
 ## Identity gate
 

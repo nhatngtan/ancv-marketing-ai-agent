@@ -13,13 +13,19 @@ main:
             steps:
               - publishOne:
                   try:
-                    call: http.post
-                    args:
-                      url: ${args.baseUrl + "/v1/publishing/tasks/publish"}
-                      auth:
-                        type: OIDC
-                      body: ${target}
-                    result: response
+                    steps:
+                      - callProvider:
+                          call: http.post
+                          args:
+                            url: ${args.baseUrl + "/v1/publishing/tasks/publish"}
+                            auth:
+                              type: OIDC
+                              audience: ${args.baseUrl}
+                            body: ${target}
+                          result: response
+                      - recordSuccess:
+                          assign:
+                            - results[target.platform]: ${response.body}
                   except:
                     as: error
                     steps:
@@ -28,13 +34,8 @@ main:
                             - results[target.platform]:
                                 status: "needs_action"
                                 error: ${error.message}
-                  next: recordSuccess
-              - recordSuccess:
-                  assign:
-                    - results[target.platform]: ${response.body}
     - summarize:
         return:
           contentId: ${args.contentId}
           platformResults: ${results}
           note: "Platform failures are isolated; successful publications are not rolled back."
-

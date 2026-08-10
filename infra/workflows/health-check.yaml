@@ -11,10 +11,10 @@ main:
           url: ${args.baseUrl + "/health"}
           auth:
             type: OIDC
+            audience: ${args.baseUrl}
         result: healthResponse
     - returnResult:
         return:
           workflow: ancv-health-check
           statusCode: ${healthResponse.code}
           body: ${healthResponse.body}
-

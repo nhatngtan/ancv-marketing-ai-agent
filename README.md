@@ -2,6 +2,8 @@
 
 Web App production: https://ancv-marketing-ai-agent.web.app
 
+Backend production: https://ancv-marketing-backend-er6fbprpra-as.a.run.app
+
 Core Marketing OS của Công ty An Ninh Cảnh Vệ. Hệ thống quản lý Content, publishing theo từng nền tảng, connector feasibility, manual fallback, system health và dữ liệu báo cáo nội bộ. Connector bên ngoài là plugin; lỗi hoặc mất quyền API không làm mất Content hay khóa pipeline.
 
 ## Trạng thái Giai đoạn 1
