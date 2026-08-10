@@ -24,6 +24,6 @@ if ($LASTEXITCODE -ne 0) {
   & $gcloud scheduler jobs create http ancv-daily-analytics --location=$Region --project=$ProjectId --schedule='15 2 * * *' --time-zone='Asia/Ho_Chi_Minh' --uri="$backendUrl/v1/scheduler/analytics/daily" --http-method=POST --oidc-service-account-email="ancv-automation@$ProjectId.iam.gserviceaccount.com" --oidc-token-audience=$backendUrl --max-retry-attempts=2 --attempt-deadline=60s
 }
 firebase.cmd use $ProjectId
-firebase.cmd deploy --only firestore:rules,firestore:indexes,storage,hosting --project $ProjectId
+firebase.cmd deploy --config firebase.json --only auth,firestore:rules,firestore:indexes,storage,hosting --project $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Firebase deployment failed.' }
 Write-Output "DEPLOY_OK backend=$backendUrl"

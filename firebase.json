@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "../apps/web/dist",
+    "public": "apps/web/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [{ "source": "**", "destination": "/index.html" }],
     "headers": [
@@ -13,13 +13,18 @@
       "googleSignIn": {
         "oAuthBrandDisplayName": "QUẢN TRỊ MARKETING AI AGENT - ANCV",
         "supportEmail": "ancv.marketing@gmail.com",
-        "authorizedRedirectUris": [
-          "https://ancv-marketing-ai-agent.web.app/__/auth/handler"
-        ]
+        "authorizedRedirectUris": ["https://ancv-marketing-ai-agent.web.app/__/auth/handler"]
       }
     }
   },
-  "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
-  "storage": { "rules": "storage.rules" },
-  "emulators": { "auth": { "port": 9099 }, "firestore": { "port": 8085 }, "storage": { "port": 9199 }, "hosting": { "port": 5000 }, "ui": { "enabled": true } }
+  "firestore": { "rules": "firebase/firestore.rules", "indexes": "firebase/firestore.indexes.json" },
+  "storage": { "rules": "firebase/storage.rules" },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8085 },
+    "storage": { "port": 9199 },
+    "hosting": { "port": 5000 },
+    "ui": { "enabled": true }
+  }
 }
+

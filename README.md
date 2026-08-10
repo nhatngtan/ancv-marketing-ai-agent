@@ -26,7 +26,7 @@ Khi chưa có Firebase config, Web App dùng dữ liệu demo cô lập trong tr
 
 ```powershell
 npm.cmd run verify
-firebase.cmd emulators:exec --project demo-ancv "npm.cmd run test"
+firebase.cmd --config firebase.json emulators:exec --project demo-ancv "npm.cmd run test"
 ```
 
 ## Triển khai
@@ -48,4 +48,3 @@ infra                    Workflows và Scheduler declarations
 scripts                  Identity, bootstrap, deploy, health checks
 docs                     Feasibility, limitations, fallback, roadmap
 ```
-

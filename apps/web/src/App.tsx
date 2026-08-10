@@ -41,7 +41,7 @@ function pageTitle(page: PageKey) { return nav.find((item) => item.key === page)
 export default function App() {
   const [page, setPage] = useState<PageKey>('overview');
   const [contents, setContents] = useState<ContentRecord[]>([]);
-  const [connectors, setConnectors] = useState<ConnectorRecord[]>([]);
+  const [connectors, setConnectors] = useState<ConnectorRecord[]>(DEFAULT_CONNECTORS);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCreate, setShowCreate] = useState<ContentType | null>(null);
   const [toast, setToast] = useState('');
@@ -53,11 +53,11 @@ export default function App() {
     return onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setAuthReady(true); });
   }, []);
   useEffect(() => {
-    if (firebaseConfigured && !user) { setContents([]); return; }
+    if (firebaseConfigured && !user) return;
     return subscribeContents(setContents);
   }, [user]);
   useEffect(() => {
-    if (firebaseConfigured && !user) { setConnectors(DEFAULT_CONNECTORS); return; }
+    if (firebaseConfigured && !user) return;
     return subscribeConnectors(setConnectors);
   }, [user]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 3000); return () => clearTimeout(timer); }, [toast]);

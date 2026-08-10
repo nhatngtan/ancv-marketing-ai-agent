@@ -10,7 +10,9 @@ if ($account -ne $ExpectedAccount) { throw "ACCOUNT MISMATCH: active gcloud acco
 
 $existing = & $gcloud projects describe $ProjectId --format='value(projectId)' 2>$null
 if (-not $existing) {
-  & $gcloud projects create $ProjectId --name='QUẢN TRỊ MARKETING AI AGENT - ANCV' --set-as-default
+  # Google Cloud limits the project display name; the full official Vietnamese
+  # name remains in Firebase, Firestore settings, and the Web App header.
+  & $gcloud projects create $ProjectId --name='ANCV Marketing AI Agent' --set-as-default
   if ($LASTEXITCODE -ne 0) { throw "Failed to create project $ProjectId." }
 }
 & $gcloud config set project $ProjectId
