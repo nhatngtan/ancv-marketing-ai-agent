@@ -27,6 +27,7 @@ export interface AuditFields {
 }
 
 export interface ConnectorRecord extends AuditFields {
+  status: ConnectorStatus;
   platform: Platform;
   authenticationStatus: ConnectorStatus;
   publishingCapability: Capability;
@@ -119,4 +120,3 @@ export const DEFAULT_CONNECTORS: ConnectorRecord[] = PLATFORMS.map((platform) =>
   mode: 'manual',
   adminOverride: false,
 }));
-

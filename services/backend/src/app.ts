@@ -9,6 +9,8 @@ import { contentRouter } from './modules/content-service.js';
 import { connectorRouter } from './modules/connector-service.js';
 import { publishingRouter } from './modules/publishing-service.js';
 import { schedulerRouter } from './modules/scheduler-service.js';
+import { aiRouter } from './modules/ai-service.js';
+import { openAIProvider } from './services/openai-provider.js';
 
 export function createApp() {
   const app = express();
@@ -26,7 +28,12 @@ export function createApp() {
       version: process.env.K_REVISION ?? 'local',
       environment: config.environment,
       checkedAt: new Date().toISOString(),
-      dependencies: { firestore },
+      dependencies: {
+        firestore,
+        openai: openAIProvider.getHealth().status,
+        ga4: config.ga4PropertyId ? 'configuration_present' : 'configuration_required',
+        searchConsole: config.searchConsoleSiteUrl ? 'configuration_present' : 'configuration_required',
+      },
     });
   });
 
@@ -34,6 +41,7 @@ export function createApp() {
   app.use('/connectors', connectorRouter);
   app.use('/v1/publishing', publishingRouter);
   app.use('/v1/scheduler', schedulerRouter);
+  app.use('/v1/ai', aiRouter);
 
   const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
     const validation = error instanceof ZodError;

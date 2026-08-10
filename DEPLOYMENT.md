@@ -6,7 +6,8 @@
 - Project number: `645264934987`
 - Region Firestore: `asia-southeast1`
 - Web App: `https://ancv-marketing-ai-agent.web.app`
-- Administrator target: `nhat.ngtan@gmail.com`
+- Development / Operating Account: `nhat.ngtan@gmail.com`
+- Future Corporate Admin: `ancv.marketing@gmail.com` (giữ nguyên quyền hiện tại)
 - Project Owners: `ancv.marketing@gmail.com` được giữ lại theo xác nhận của người dùng; `nhat.ngtan@gmail.com` là đồng Owner.
 - Operational administrator: `nhat.ngtan@gmail.com` dùng cho gcloud, ADC, Firebase, GitHub và Git; đồng thời có các role quản trị theo phạm vi dịch vụ.
 - Firestore: đã tạo, production rules và indexes đã deploy, delete protection đã bật.
@@ -53,4 +54,14 @@ gcloud.cmd workflows run ancv-health-check --location asia-southeast1 --data '{"
 ./scripts/test-health.ps1 -BaseUrl <cloud-run-url> -IdentityToken (gcloud.cmd auth print-identity-token)
 ```
 
-Sau deploy, xác minh IAM: administrator ANCV có quyền quản trị project; Cloud Run dùng `ancv-cloud-run`; Workflows dùng `ancv-workflows`; Scheduler/Tasks dùng `ancv-automation`.
+Sau deploy, xác minh IAM: giữ nguyên hai Owner đã được phê duyệt; Cloud Run dùng `ancv-cloud-run`; Workflows dùng `ancv-workflows`; Scheduler/Tasks dùng `ancv-automation`. Xem checklist chuyển giao tại [docs/HANDOVER.md](docs/HANDOVER.md).
+
+## Cấu hình Giai đoạn 2A
+
+- Secret container: `openai-api-key`. Chỉ gắn `OPENAI_API_KEY=openai-api-key:latest` vào Cloud Run sau khi đã có secret version hợp lệ.
+- Text model: `OPENAI_TEXT_MODEL` (mặc định cấu hình `gpt-5.6-terra`).
+- Image model: `OPENAI_IMAGE_MODEL` (mặc định `gpt-image-2`).
+- GA4: `GA4_PROPERTY_ID`; cấp Viewer cho `ancv-cloud-run@ancv-marketing-ai-agent.iam.gserviceaccount.com` trên đúng property trước khi test `runReport`.
+- Search Console: `SEARCH_CONSOLE_SITE_URL`; thêm đúng Service Account vào property trước khi test `searchAnalytics.query`.
+
+Không gắn ADC hoặc refresh token cá nhân vào Cloud Run. Việc thêm secret version và cấu hình property phải được thực hiện qua Secret Manager/Cloud Run environment, không commit `.env`.

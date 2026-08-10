@@ -14,14 +14,23 @@ Core Marketing OS của Công ty An Ninh Cảnh Vệ. Hệ thống quản lý Co
 - Workflows, Cloud Tasks, Scheduler và service-account bootstrap có script tái tạo.
 - Tất cả connector bên ngoài mặc định `not_tested` + `manual`; không connector nào được tuyên bố PASS khi chưa có request thực tế.
 
+## Nền móng Giai đoạn 2A
+
+- OpenAI abstraction dùng Responses API cho chia scene, platform copy và bài viết; Image API dùng model cấu hình. MASTER SCRIPT luôn do người dùng nhập.
+- GA4, Search Console và Website có feasibility runner riêng; kết quả lưu vào `connectorTests` và cập nhật `connectors`.
+- Website runner chặn private/loopback target, giới hạn redirect và timeout để tránh SSRF/chi phí treo.
+- System Health đọc trạng thái backend; connector chưa PASS tiếp tục manual/semi-automatic.
+- Ownership development/bàn giao được ghi tại [docs/HANDOVER.md](docs/HANDOVER.md).
+
 ## Chạy local
 
 Yêu cầu Node.js 22+.
 
 ```powershell
-npm.cmd install
-npm.cmd run dev
-npm.cmd run dev:backend
+corepack enable
+pnpm.cmd install --frozen-lockfile
+pnpm.cmd run dev
+pnpm.cmd run dev:backend
 ```
 
 Khi chưa có Firebase config, Web App dùng dữ liệu demo cô lập trong trình duyệt và hiển thị cảnh báo rõ ràng. Sao chép `apps/web/.env.example` thành `.env.local` sau khi có Firebase Web App config chính thức. Không commit file môi trường.
@@ -29,8 +38,8 @@ Khi chưa có Firebase config, Web App dùng dữ liệu demo cô lập trong tr
 ## Kiểm thử
 
 ```powershell
-npm.cmd run verify
-firebase.cmd --config firebase.json emulators:exec --project demo-ancv "npm.cmd run test"
+pnpm.cmd run verify
+firebase.cmd --config firebase.json emulators:exec --project demo-ancv "pnpm.cmd run test"
 ```
 
 ## Triển khai

@@ -9,8 +9,9 @@
 - Retry phân loại: auth/permission/validation không retry; rate limit/5xx có trần; không tạo vòng lặp Cloud Tasks.
 - Không tự xử lý CAPTCHA, 2FA hoặc security verification. Flow Worker dừng an toàn khi UI không chắc chắn.
 - Không dùng OAuth client, token, ADC hoặc browser session của dự án cũ.
+- Không hard-code email development trong business logic. Role Admin lấy từ Firestore/IAM; runtime không dùng ADC cá nhân.
+- OpenAI key production chỉ được gắn từ Secret Manager `openai-api-key`; thay key không cần sửa source.
 
 ## Báo cáo lỗ hổng
 
 Không đưa credential vào issue hoặc log. Thu hồi/rotate secret trong đúng project ANCV, kiểm tra Cloud Audit Logs và khóa connector liên quan về `manual` cho tới khi test lại.
-

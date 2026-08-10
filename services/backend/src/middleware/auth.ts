@@ -13,6 +13,7 @@ export async function requireFirebaseEditor(request: Request, response: Response
     if (!user.exists || user.data()?.status !== 'active' || !['admin', 'editor'].includes(user.data()?.role)) {
       response.status(403).json({ error: 'EDITOR_REQUIRED' }); return;
     }
+    response.locals.identity = { uid: identity.uid, email: identity.email ?? null, role: user.data()?.role };
     next();
   } catch { response.status(401).json({ error: 'INVALID_TOKEN' }); }
 }
@@ -29,4 +30,3 @@ export async function requireAutomationIdentity(request: Request, response: Resp
     next();
   } catch { response.status(401).json({ error: 'INVALID_AUTOMATION_TOKEN' }); }
 }
-

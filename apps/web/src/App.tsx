@@ -15,7 +15,7 @@ import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
 import { auth, logout } from './lib/firebase';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { DEFAULT_CONNECTORS } from '@ancv/shared';
-import { createContent, subscribeConnectors, subscribeContents, updateContent } from './lib/repository';
+import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, testConnector, updateContent } from './lib/repository';
 
 type PageKey = 'overview' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
 const nav: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
@@ -98,7 +98,7 @@ export default function App() {
 }
 
 function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
-  return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Tài khoản quản trị chính: nhat.ngtan@gmail.com</small></section>;
+  return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Vai trò quản trị được cấp bằng Firebase Authentication và Firestore.</small></section>;
 }
 
 function Overview({ contents, connectors, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; onNavigate: (page: PageKey) => void }) {
@@ -170,21 +170,33 @@ function CreateContentModal({ type, onClose, onSaved }: { type: ContentType; onC
 }
 
 function ConnectorsPage({ connectors, onToast }: { connectors: ConnectorRecord[]; onToast: (text: string) => void }) {
-  return <><div className="page-heading"><div><span className="eyebrow">API FEASIBILITY</span><h1>Kết nối</h1><p>Chỉ bật tự động sau khi OAuth, quyền, request nghiệp vụ và refresh token đều PASS thực tế.</p></div></div><div className="connector-grid">{connectors.map((item) => <article className="connector-card" key={item.id}><div className="connector-title"><span className={`platform-dot large ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><h3>{platformLabels[item.platform]}</h3><span>Kiểm tra gần nhất: {item.testedAt ? new Date(item.testedAt).toLocaleString('vi-VN') : 'Chưa có'}</span></div><Badge tone={item.authenticationStatus === 'available' ? 'success' : 'warning'}>{connectorStatusVi[item.authenticationStatus]}</Badge></div><dl><div><dt>OAuth</dt><dd>{connectorStatusVi[item.authenticationStatus]}</dd></div><div><dt>Publishing</dt><dd>{item.publishingCapability === 'unverified' ? 'Chưa xác minh' : item.publishingCapability}</dd></div><div><dt>Analytics</dt><dd>{item.analyticsCapability === 'unverified' ? 'Chưa xác minh' : item.analyticsCapability}</dd></div><div><dt>Mode</dt><dd><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></dd></div></dl><div className="limitation"><CircleAlert size={16}/><span>{item.limitations[0]}</span></div><button className="test-button" onClick={() => onToast(`Không chạy test giả cho ${platformLabels[item.platform]}; cần credential production.`)}><Activity size={16}/>Test lại</button></article>)}</div></>;
+  const [testing, setTesting] = useState<Platform | null>(null);
+  const run = async (platform: Platform) => {
+    if (!['ga4', 'search_console', 'website'].includes(platform)) { onToast(`${platformLabels[platform]} chưa có test runner ở Giai đoạn 2A.`); return; }
+    let url: string | undefined;
+    if (platform === 'website') { url = window.prompt('Nhập URL Website cần kiểm tra (https://...):') ?? undefined; if (!url) return; }
+    setTesting(platform);
+    try { const result = await testConnector(platform as 'ga4' | 'search_console' | 'website', url); onToast(`Đã lưu kết quả ${platformLabels[platform]}: ${result.status}.`); }
+    catch (error) { onToast(error instanceof Error ? error.message : 'Feasibility test thất bại.'); }
+    finally { setTesting(null); }
+  };
+  return <><div className="page-heading"><div><span className="eyebrow">API FEASIBILITY</span><h1>Kết nối</h1><p>Chỉ bật tự động sau khi OAuth, quyền, request nghiệp vụ và refresh token đều PASS thực tế.</p></div></div><div className="connector-grid">{connectors.map((item) => <article className="connector-card" key={item.id}><div className="connector-title"><span className={`platform-dot large ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><h3>{platformLabels[item.platform]}</h3><span>Kiểm tra gần nhất: {item.testedAt ? new Date(item.testedAt).toLocaleString('vi-VN') : 'Chưa có'}</span></div><Badge tone={item.status === 'available' ? 'success' : 'warning'}>{connectorStatusVi[item.status]}</Badge></div><dl><div><dt>OAuth</dt><dd>{connectorStatusVi[item.authenticationStatus]}</dd></div><div><dt>Publishing</dt><dd>{item.publishingCapability === 'unverified' ? 'Chưa xác minh' : item.publishingCapability}</dd></div><div><dt>Analytics</dt><dd>{item.analyticsCapability === 'unverified' ? 'Chưa xác minh' : item.analyticsCapability}</dd></div><div><dt>Mode</dt><dd><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></dd></div></dl><div className="limitation"><CircleAlert size={16}/><span>{item.limitations[0]}</span></div><button className="test-button" disabled={testing === item.platform} onClick={() => run(item.platform)}><Activity size={16}/>{testing === item.platform ? 'Đang kiểm tra…' : 'Test lại'}</button></article>)}</div></>;
 }
 
 function HealthPage({ connectors }: { connectors: ConnectorRecord[] }) {
   const now = new Date().toISOString();
+  const [backend, setBackend] = useState<{ status: string; checkedAt: string; dependencies: Record<string, string> } | null>(null);
+  useEffect(() => { fetchBackendHealth().then(setBackend).catch(() => setBackend({ status: 'error', checkedAt: new Date().toISOString(), dependencies: {} })); }, []);
   const groups = useMemo<Record<string, HealthItem[]>>(() => ({
     Core: [
       { key: 'web', label: 'Web App', status: 'operational', checkedAt: now }, { key: 'firebase', label: 'Firebase', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now },
       { key: 'firestore', label: 'Firestore', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'storage', label: 'Storage', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now },
     ],
-    AI: [{ key: 'openai', label: 'OpenAI', status: 'configuration_required', checkedAt: now, detail: 'Chờ Secret Manager' }],
+    AI: [{ key: 'openai', label: 'OpenAI', status: backend?.dependencies.openai === 'operational' ? 'operational' : 'configuration_required', checkedAt: backend?.checkedAt ?? now, detail: backend?.dependencies.openai === 'operational' ? 'Responses API sẵn sàng' : 'Secret đã tạo, chờ secret version' }],
     Publishing: connectors.filter((item) => !['ga4','search_console'].includes(item.platform)).map((item) => ({ key: item.platform, label: platformLabels[item.platform], status: item.mode === 'manual' ? 'manual' : 'partial', checkedAt: now })),
-    Analytics: [{ key: 'ga4', label: 'GA4', status: 'configuration_required', checkedAt: now }, { key: 'gsc', label: 'Search Console', status: 'configuration_required', checkedAt: now }, { key: 'social', label: 'Social Analytics', status: 'configuration_required', checkedAt: now }],
+    Analytics: [{ key: 'ga4', label: 'GA4', status: connectors.find((item) => item.platform === 'ga4')?.status === 'available' ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'gsc', label: 'Search Console', status: connectors.find((item) => item.platform === 'search_console')?.status === 'available' ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'social', label: 'Social Analytics', status: 'configuration_required', checkedAt: now }],
     Automation: [{ key: 'flow', label: 'Flow Worker', status: 'manual', checkedAt: now, detail: 'Experimental — manual fallback sẵn sàng' }],
-  }), [connectors, now]);
+  }), [backend, connectors, now]);
   const healthVi: Record<HealthItem['status'], string> = { operational: 'Hoạt động', partial: 'Khả dụng một phần', configuration_required: 'Cần cấu hình', pending_review: 'Chờ phê duyệt', error: 'Lỗi', manual: 'Thủ công' };
   return <><div className="page-heading"><div><span className="eyebrow">SAFE FAILURE</span><h1>Tình trạng hệ thống</h1><p>Mỗi thành phần được giám sát độc lập; lỗi connector không làm Core dừng.</p></div><div className="health-summary"><span></span>Core đang hoạt động</div></div><div className="health-groups">{Object.entries(groups).map(([name, items]) => <section className="panel" key={name}><div className="panel-head"><h2>{name}</h2><small>Dữ liệu cập nhật lần cuối: {new Date().toLocaleTimeString('vi-VN')}</small></div>{items.map((item) => <div className="health-row" key={item.key}><div className={`health-indicator ${item.status}`}></div><div><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</div><Badge tone={item.status === 'operational' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{healthVi[item.status]}</Badge></div>)}</section>)}</div></>;
 }
