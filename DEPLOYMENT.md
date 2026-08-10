@@ -7,8 +7,8 @@
 - Region Firestore: `asia-southeast1`
 - Web App: `https://ancv-marketing-ai-agent.web.app`
 - Administrator target: `nhat.ngtan@gmail.com`
-- Project Owner: `ancv.marketing@gmail.com` được giữ lại theo xác nhận của người dùng.
-- Operational administrator: `nhat.ngtan@gmail.com` dùng cho gcloud, ADC, Firebase, GitHub và Git; có các role quản trị theo phạm vi dịch vụ.
+- Project Owners: `ancv.marketing@gmail.com` được giữ lại theo xác nhận của người dùng; `nhat.ngtan@gmail.com` là đồng Owner.
+- Operational administrator: `nhat.ngtan@gmail.com` dùng cho gcloud, ADC, Firebase, GitHub và Git; đồng thời có các role quản trị theo phạm vi dịch vụ.
 - Firestore: đã tạo, production rules và indexes đã deploy, delete protection đã bật.
 - Firebase Authentication: Google provider đã bật; user quản trị chính đã seed role `admin`.
 - Firebase Storage: bucket `ancv-marketing-ai-agent.firebasestorage.app` đã tạo tại `ASIA-SOUTHEAST1`; production rules đã deploy.
