@@ -34,7 +34,7 @@ firebase.cmd --config firebase.json emulators:exec --project demo-ancv "npm.cmd 
 ## Triển khai
 
 1. Chạy `scripts/identity-preflight.ps1`.
-2. Chỉ tiếp tục khi Google/Firebase đều là `ancv.marketing@gmail.com`.
+2. Chỉ tiếp tục khi Google/Firebase đều là `nhat.ngtan@gmail.com`.
 3. Chạy `scripts/bootstrap-gcp.ps1`, liên kết Billing nếu Google yêu cầu.
 4. Khởi tạo Firebase/Firestore/Auth theo [DEPLOYMENT.md](DEPLOYMENT.md).
 5. Chạy `scripts/deploy.ps1 -ProjectId <project-id>`.

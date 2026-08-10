@@ -98,7 +98,7 @@ export default function App() {
 }
 
 function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
-  return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Tài khoản quản trị chính: ancv.marketing@gmail.com</small></section>;
+  return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Tài khoản quản trị chính: nhat.ngtan@gmail.com</small></section>;
 }
 
 function Overview({ contents, connectors, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; onNavigate: (page: PageKey) => void }) {

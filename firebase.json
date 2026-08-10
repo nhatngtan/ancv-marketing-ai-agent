@@ -12,7 +12,7 @@
     "providers": {
       "googleSignIn": {
         "oAuthBrandDisplayName": "QUẢN TRỊ MARKETING AI AGENT - ANCV",
-        "supportEmail": "ancv.marketing@gmail.com",
+        "supportEmail": "nhat.ngtan@gmail.com",
         "authorizedRedirectUris": ["https://ancv-marketing-ai-agent.web.app/__/auth/handler"]
       }
     }
@@ -27,4 +27,3 @@
     "ui": { "enabled": true }
   }
 }
-

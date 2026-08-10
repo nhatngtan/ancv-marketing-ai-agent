@@ -6,7 +6,8 @@
 - Project number: `645264934987`
 - Region Firestore: `asia-southeast1`
 - Web App: `https://ancv-marketing-ai-agent.web.app`
-- Administrator/Owner: `ancv.marketing@gmail.com`
+- Administrator target: `nhat.ngtan@gmail.com`
+- Transitional Owner: `ancv.marketing@gmail.com` remains until the Google Owner invitation is accepted.
 - Firestore: đã tạo, production rules và indexes đã deploy, delete protection đã bật.
 - Firebase Authentication: Google provider đã bật; user quản trị chính đã seed role `admin`.
 - Firebase Storage: chưa tạo bucket vì project chưa liên kết Billing.
@@ -18,9 +19,9 @@ Không đánh dấu các dịch vụ chờ Billing là đã deploy. Sau khi liê
 
 Mọi cloud mutation phải qua `scripts/identity-preflight.ps1`. Giá trị yêu cầu:
 
-- Google active account: `ancv.marketing@gmail.com`
-- Firebase active account: `ancv.marketing@gmail.com`
-- Git repository email: `ancv.marketing@gmail.com`
+- Google active account: `nhat.ngtan@gmail.com`
+- Firebase active account: `nhat.ngtan@gmail.com`
+- Git repository email: `nhat.ngtan@gmail.com`
 - Project riêng ANCV; không tái sử dụng ADC, OAuth client hay service-account JSON cũ.
 
 GitHub là gate độc lập: không tạo repository nếu `gh auth status` không xác nhận account/organization chính thức của ANCV.
@@ -29,7 +30,7 @@ GitHub là gate độc lập: không tạo repository nếu `gh auth status` kh�
 
 ```powershell
 gcloud.cmd config configurations create ancv --activate
-gcloud.cmd auth login ancv.marketing@gmail.com
+gcloud.cmd auth login nhat.ngtan@gmail.com
 firebase.cmd login:add
 ./scripts/identity-preflight.ps1
 ./scripts/bootstrap-gcp.ps1 -ProjectId ancv-marketing-ai-agent

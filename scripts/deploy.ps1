@@ -1,4 +1,4 @@
-param([string]$ProjectId, [string]$Region = 'asia-southeast1', [string]$ExpectedAccount = 'ancv.marketing@gmail.com')
+param([string]$ProjectId, [string]$Region = 'asia-southeast1', [string]$ExpectedAccount = 'nhat.ngtan@gmail.com')
 $ErrorActionPreference = 'Continue'
 if (-not $ProjectId) { throw 'ProjectId is required.' }
 $gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"

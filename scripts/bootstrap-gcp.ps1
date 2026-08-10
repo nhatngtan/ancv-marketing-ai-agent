@@ -1,7 +1,7 @@
 param(
   [string]$ProjectId = 'ancv-marketing-ai-agent',
   [string]$Region = 'asia-southeast1',
-  [string]$ExpectedAccount = 'ancv.marketing@gmail.com'
+  [string]$ExpectedAccount = 'nhat.ngtan@gmail.com'
 )
 $ErrorActionPreference = 'Continue'
 $gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"

@@ -8,7 +8,7 @@ const demoContents: ContentRecord[] = [
     id: 'demo-video', contentId: 'ANCV-VID-2026-001', type: 'video', title: '5 lớp bảo vệ an ninh cho doanh nghiệp',
     topic: 'An ninh doanh nghiệp', body: '', masterScript: 'MASTER SCRIPT được nhập từ bên ngoài hệ thống.',
     shortDescription: '5 lớp bảo vệ doanh nghiệp cần có.', fullDescription: 'Khung bảo vệ chủ động dành cho doanh nghiệp hiện đại.',
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: 'ancv.marketing@gmail.com', status: 'partially_published',
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: 'nhat.ngtan@gmail.com', status: 'partially_published',
     platforms: [
       { platform: 'youtube', mode: 'manual', status: 'published', postUrl: 'https://youtube.com' },
       { platform: 'facebook', mode: 'manual', status: 'published', postUrl: 'https://facebook.com' },
@@ -20,7 +20,7 @@ const demoContents: ContentRecord[] = [
   {
     id: 'demo-article', contentId: 'ANCV-ART-2026-001', type: 'article', title: 'Checklist lựa chọn dịch vụ bảo vệ chuyên nghiệp',
     topic: 'Dịch vụ bảo vệ', body: 'Nội dung mẫu cho quy trình biên tập và duyệt.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    createdBy: 'ancv.marketing@gmail.com', status: 'review', platforms: [
+    createdBy: 'nhat.ngtan@gmail.com', status: 'review', platforms: [
       { platform: 'website', mode: 'manual', status: 'manual_pending' },
       { platform: 'facebook', mode: 'manual', status: 'pending' },
       { platform: 'zalo', mode: 'manual', status: 'pending' },

@@ -1,4 +1,4 @@
-param([string]$ExpectedAccount = 'ancv.marketing@gmail.com')
+param([string]$ExpectedAccount = 'nhat.ngtan@gmail.com')
 $ErrorActionPreference = 'Continue'
 $gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
 $gcloudAccount = if (Test-Path $gcloud) { (& $gcloud auth list --filter='status:ACTIVE' --format='value(account)' 2>$null) } else { 'MISSING' }
