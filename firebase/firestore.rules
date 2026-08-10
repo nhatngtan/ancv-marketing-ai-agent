@@ -20,7 +20,7 @@ service cloud.firestore {
       allow read: if signedIn() && collectionName in [
         'contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'connectors',
         'connectorTests', 'socialMetrics', 'websiteMetrics', 'seoMetrics', 'reports',
-        'workflowRuns', 'systemAlerts', 'systemSettings'
+        'workflowRuns', 'systemAlerts', 'systemSettings', 'aiJobs', 'aiUsage', 'auditLogs'
       ];
       allow create: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && validAuditOnCreate();
       allow update: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && preservesOwnership();
@@ -33,4 +33,3 @@ service cloud.firestore {
     match /{document=**} { allow read, write: if false; }
   }
 }
-

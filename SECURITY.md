@@ -12,6 +12,8 @@
 - Không hard-code email development trong business logic. Role Admin lấy từ Firestore/IAM; runtime không dùng ADC cá nhân.
 - OpenAI key production chỉ được gắn từ Secret Manager `openai-api-key`; thay key không cần sửa source.
 
+- Cloud Run xác minh Firebase ID token (kể cả revocation) bằng Service Account production với `roles/firebaseauth.viewer`; không dùng credential cá nhân.
+
 ## Báo cáo lỗ hổng
 
 Không đưa credential vào issue hoặc log. Thu hồi/rotate secret trong đúng project ANCV, kiểm tra Cloud Audit Logs và khóa connector liên quan về `manual` cho tới khi test lại.

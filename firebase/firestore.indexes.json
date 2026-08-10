@@ -2,8 +2,10 @@
   "indexes": [
     { "collectionGroup": "contents", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "type", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" }] },
     { "collectionGroup": "publishingJobs", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "platform", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "scheduledAt", "order": "ASCENDING" }] },
-    { "collectionGroup": "connectorTests", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "platform", "order": "ASCENDING" }, { "fieldPath": "testedAt", "order": "DESCENDING" }] }
+    { "collectionGroup": "connectorTests", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "platform", "order": "ASCENDING" }, { "fieldPath": "testedAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "scenes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "contentDocId", "order": "ASCENDING" }, { "fieldPath": "sceneNumber", "order": "ASCENDING" }] },
+    { "collectionGroup": "mediaAssets", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "contentDocId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "aiUsage", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "operation", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] }
   ],
   "fieldOverrides": []
 }
-

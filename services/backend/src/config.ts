@@ -10,4 +10,16 @@ export const config = {
   wordpressBaseUrl: process.env.WORDPRESS_BASE_URL ?? '',
   wordpressUsername: process.env.WORDPRESS_USERNAME ?? '',
   wordpressApplicationPassword: process.env.WORDPRESS_APPLICATION_PASSWORD ?? '',
+  aiRateLimitPerTenMinutes: Number(process.env.AI_RATE_LIMIT_PER_10_MINUTES ?? 20),
 };
+
+export const aiModelConfig = {
+  scene_breakdown: config.openAITextModel,
+  scene_regeneration: config.openAITextModel,
+  flow_prompt: config.openAITextModel,
+  video_social_copy: config.openAITextModel,
+  article_generation: config.openAITextModel,
+  article_platform_copy: config.openAITextModel,
+  image_generation: config.openAIImageModel,
+  report_analysis: config.openAITextModel,
+} as const;

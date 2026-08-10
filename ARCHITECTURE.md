@@ -32,3 +32,16 @@ Core chỉ phụ thuộc Firebase và backend nội bộ. Dashboard đọc snaps
 
 Backend dùng Firestore transaction trên `systemCounters/{type}-{year}` để sinh `ANCV-VID-YYYY-XXX` và `ANCV-ART-YYYY-XXX`; Rules chặn client truy cập counter nhằm chống trùng và giả mạo sequence.
 
+## AI Content Studio
+
+- `contents`: nguồn sự thật của Video/Article, MASTER SCRIPT, Article Draft, visual continuity, platform copies và approval state.
+- `scenes`: scene có cấu trúc, độc lập để thêm/xóa/duplicate/reorder/regenerate một scene.
+- `mediaAssets`: Video Raw takes, Video Final và ảnh Article; binary nằm ở Cloud Storage.
+- `aiJobs`: idempotency và trạng thái `queued/processing/succeeded/failed`; tối đa một application attempt cho cùng request ID.
+- `aiUsage`: operation, model, request ID và token/image usage để tổng hợp theo tháng.
+- `auditLogs`: generate/regenerate/approve/upload/manual publish với actor và timestamp.
+- `systemSettings/companyProfile`: dữ liệu Công ty đã xác minh được phép đưa vào prompt.
+
+AI endpoints yêu cầu Firebase `admin/editor`. Structured output được OpenAI ràng buộc JSON Schema và backend tiếp tục validate bằng Zod trước khi ghi production collections. Image bytes được upload vào Storage ngay; ứng dụng không phụ thuộc URL tạm của provider.
+
+`MASTER SCRIPT external → AI processing → Human edit/review → Human approval → Ready for distribution`. Không endpoint Giai đoạn 2B nào tự publish social/WordPress.

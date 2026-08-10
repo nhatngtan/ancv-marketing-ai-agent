@@ -6,17 +6,20 @@ Backend production: https://ancv-marketing-backend-er6fbprpra-as.a.run.app
 
 Core Marketing OS của Công ty An Ninh Cảnh Vệ. Hệ thống quản lý Content, publishing theo từng nền tảng, connector feasibility, manual fallback, system health và dữ liệu báo cáo nội bộ. Connector bên ngoài là plugin; lỗi hoặc mất quyền API không làm mất Content hay khóa pipeline.
 
-## Trạng thái Giai đoạn 1
+## Trạng thái production — Giai đoạn 2B
 
-- Web App React/TypeScript, responsive, có Dashboard, Video/Article CRUD, Kết nối và Tình trạng hệ thống.
+- Web App React/TypeScript có Video Content Studio, Article Content Studio, Scene Editor, Media Library, Company Profile, Dashboard usage và quy trình duyệt.
 - Firebase Auth/Firestore/Storage/Hosting đã có cấu hình production; deployment chỉ chạy sau identity pre-flight.
 - Cloud Run backend có `/health`, `/connectors/health`, transaction Content ID, publishing/manual fallback và retry policy.
 - Workflows, Cloud Tasks, Scheduler và service-account bootstrap có script tái tạo.
 - Tất cả connector bên ngoài mặc định `not_tested` + `manual`; không connector nào được tuyên bố PASS khi chưa có request thực tế.
 
-## Nền móng Giai đoạn 2A
+## AI Content Studio — Giai đoạn 2B
 
-- OpenAI abstraction dùng Responses API cho chia scene, platform copy và bài viết; Image API dùng model cấu hình. MASTER SCRIPT luôn do người dùng nhập.
+- OpenAI Responses API dùng Structured Outputs cho scene/article/platform copy; Image API tạo ảnh theo thao tác chủ động. MASTER SCRIPT luôn do người dùng nhập.
+- Mọi AI action yêu cầu Firebase editor, có idempotency key, `aiJobs`, `aiUsage`, audit log, rate limit và retry giới hạn.
+- Ảnh AI được lưu Cloud Storage; Video Raw/Final được upload thủ công. Google Flow và CapCut không phải dependency.
+- AI không tự publish: Content phải được người dùng chỉnh sửa, duyệt rồi mới chuyển `ready_to_publish`.
 - GA4, Search Console và Website có feasibility runner riêng; kết quả lưu vào `connectorTests` và cập nhật `connectors`.
 - Website runner chặn private/loopback target, giới hạn redirect và timeout để tránh SSRF/chi phí treo.
 - System Health đọc trạng thái backend; connector chưa PASS tiếp tục manual/semi-automatic.
@@ -61,3 +64,5 @@ infra                    Workflows và Scheduler declarations
 scripts                  Identity, bootstrap, deploy, health checks
 docs                     Feasibility, limitations, fallback, roadmap
 ```
+
+Luồng sử dụng chi tiết: [docs/AI_CONTENT_PIPELINE.md](docs/AI_CONTENT_PIPELINE.md). Theo dõi usage: [docs/OPENAI_USAGE.md](docs/OPENAI_USAGE.md).

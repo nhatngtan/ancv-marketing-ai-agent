@@ -41,6 +41,7 @@ foreach ($name in $serviceAccounts) {
 
 $bindings = @(
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/datastore.user' },
+  @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/firebaseauth.viewer' },
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/storage.objectAdmin' },
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/secretmanager.secretAccessor' },
   @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/cloudtasks.enqueuer' },

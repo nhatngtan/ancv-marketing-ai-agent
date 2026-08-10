@@ -13,6 +13,7 @@ import { aiRouter } from './modules/ai-service.js';
 import OpenAI from 'openai';
 import { OpenAIConfigurationError, openAIProvider } from './services/openai-provider.js';
 import { db } from './firebase.js';
+import { AIJobInProgressError, AIJobPreviouslyFailedError } from './services/ai-job.js';
 
 export function createApp() {
   const app = express();
@@ -54,11 +55,13 @@ export function createApp() {
     const validation = error instanceof ZodError;
     const configuration = error instanceof OpenAIConfigurationError;
     const upstream = error instanceof OpenAI.APIError;
-    const status = validation ? 400 : configuration ? 503 : upstream && error.status === 429 ? 503 : upstream ? 502 : 500;
+    const jobConflict = error instanceof AIJobInProgressError || error instanceof AIJobPreviouslyFailedError;
+    const explicitStatus = Number((error as { statusCode?: number }).statusCode ?? 0);
+    const status = validation ? 400 : jobConflict ? 409 : configuration ? 503 : upstream && error.status === 429 ? 503 : upstream ? 502 : explicitStatus || 500;
     request.log.error({ event: 'request_failed', errorType: error instanceof Error ? error.name : 'Unknown', upstreamStatus: upstream ? error.status : undefined, requestId: upstream ? error.requestID : undefined });
     response.status(status).json({
-      error: validation ? 'VALIDATION_ERROR' : configuration ? 'CONFIGURATION_REQUIRED' : upstream ? 'OPENAI_UPSTREAM_ERROR' : 'INTERNAL_ERROR',
-      message: validation ? error.issues.map((issue) => issue.message).join('; ') : configuration ? 'OpenAI chưa được cấu hình.' : upstream ? 'OpenAI tạm thời không khả dụng; lỗi đã được ghi log.' : 'Đã ghi nhận lỗi hệ thống.',
+      error: validation ? 'VALIDATION_ERROR' : jobConflict ? error.message : configuration ? 'CONFIGURATION_REQUIRED' : upstream ? 'OPENAI_UPSTREAM_ERROR' : explicitStatus === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR',
+      message: validation ? error.issues.map((issue) => issue.message).join('; ') : jobConflict ? 'Tác vụ trùng đang chạy hoặc đã thất bại; hãy dùng request ID mới để thử lại.' : configuration ? 'OpenAI chưa được cấu hình.' : upstream ? 'OpenAI tạm thời không khả dụng; lỗi đã được ghi log.' : 'Đã ghi nhận lỗi hệ thống.',
     });
   };
   app.use(errorHandler);

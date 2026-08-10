@@ -15,8 +15,15 @@ export type Platform = (typeof PLATFORMS)[number];
 export type Capability = 'verified' | 'partial' | 'unverified' | 'unavailable';
 export type Role = 'admin' | 'editor' | 'viewer';
 export type ContentType = 'video' | 'article';
-export type ContentStatus = 'draft' | 'review' | 'approved' | 'partially_published' | 'published' | 'archived';
+export const CONTENT_STATUSES = [
+  'idea', 'draft', 'generating', 'in_production', 'post_production', 'awaiting_copy',
+  'review', 'approved', 'ready_to_publish', 'scheduled', 'partially_published',
+  'published', 'archived', 'test',
+] as const;
+export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 export type PublishingStatus = 'pending' | 'processing' | 'published' | 'needs_action' | 'manual_pending' | 'failed' | 'skipped';
+export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
+export type AIOperation = 'scene_breakdown' | 'scene_regeneration' | 'flow_prompt' | 'video_social_copy' | 'article_generation' | 'article_platform_copy' | 'image_generation' | 'report_analysis';
 
 export interface AuditFields {
   id: string;
@@ -66,6 +73,113 @@ export interface ContentRecord extends AuditFields {
   fullDescription?: string;
   scheduledAt?: string;
   platforms: PlatformPublication[];
+  testContent?: boolean;
+  objective?: string;
+  sourceMaterial?: string;
+  notes?: string;
+  desiredLength?: string;
+  platformCopies?: Partial<Record<Platform, PlatformCopy>>;
+  characterReferences?: CharacterReference[];
+  visualStyle?: VisualStyle;
+  selectedImageId?: string;
+  finalVideoAssetId?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+}
+
+export interface PlatformCopy {
+  platform: Platform;
+  title?: string;
+  text: string;
+  status: 'draft' | 'approved';
+  generatedAt?: string;
+  generatedBy?: string;
+  editedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  version: number;
+}
+
+export interface CharacterReference {
+  id: string;
+  name: string;
+  description?: string;
+  appearance?: string;
+  wardrobe?: string;
+  notes?: string;
+  imageUrl?: string;
+}
+
+export interface VisualStyle {
+  style?: string;
+  lighting?: string;
+  colors?: string;
+  cameraStyle?: string;
+  aspectRatio?: string;
+  continuityInstructions?: string;
+}
+
+export interface SceneRecord extends AuditFields {
+  contentDocId: string;
+  sceneNumber: number;
+  title: string;
+  durationEstimate: number;
+  narration: string;
+  visualDescription: string;
+  cameraDirection: string;
+  environment: string;
+  characters: string[];
+  continuityNotes: string;
+  generationPrompt: string;
+  status: 'draft' | 'approved' | 'used';
+}
+
+export interface MediaAssetRecord extends AuditFields {
+  contentDocId: string;
+  contentId: string;
+  kind: 'scene_take' | 'video_final' | 'article_image';
+  storagePath: string;
+  downloadUrl?: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sceneId?: string;
+  takeNumber?: number;
+  selected?: boolean;
+  prompt?: string;
+  model?: string;
+  quality?: string;
+  usage?: AIUsageTokens;
+}
+
+export interface AIUsageTokens {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+}
+
+export interface AIUsageRecord extends AuditFields, AIUsageTokens {
+  operation: AIOperation;
+  model: string;
+  contentDocId?: string;
+  jobId: string;
+  requestId?: string | null;
+  imageCount?: number;
+}
+
+export interface CompanyProfile {
+  companyName: string;
+  brandName: string;
+  website: string;
+  introduction: string;
+  services: string;
+  serviceAreas: string;
+  contact: string;
+  toneOfVoice: string;
+  defaultCta: string;
+  approvedFacts: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface HealthItem {

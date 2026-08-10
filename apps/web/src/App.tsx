@@ -11,11 +11,13 @@ import {
 import { Badge } from './components/Badge';
 import { EmptyState } from './components/EmptyState';
 import { StatCard } from './components/StatCard';
+import { ContentStudioPage } from './components/ContentStudio';
+import { CompanySettings } from './components/CompanySettings';
 import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
 import { auth, logout } from './lib/firebase';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { DEFAULT_CONNECTORS } from '@ancv/shared';
-import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, testConnector, updateContent } from './lib/repository';
+import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, subscribeMonthlyAIUsage, testConnector, updateContent } from './lib/repository';
 
 type PageKey = 'overview' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
 const nav: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
@@ -47,6 +49,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
+  const [aiUsage, setAIUsage] = useState({ requests: 0, totalTokens: 0, images: 0 });
 
   useEffect(() => {
     if (!auth) return;
@@ -56,6 +59,7 @@ export default function App() {
     if (firebaseConfigured && !user) return;
     return subscribeContents(setContents);
   }, [user]);
+  useEffect(() => { if (firebaseConfigured && !user) return; return subscribeMonthlyAIUsage(setAIUsage); }, [user]);
   useEffect(() => {
     if (firebaseConfigured && !user) return;
     return subscribeConnectors(setConnectors);
@@ -84,11 +88,12 @@ export default function App() {
       <section className="workspace">
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
         {firebaseConfigured && authReady && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
-          {page === 'overview' && <Overview contents={contents} connectors={connectors} onNavigate={openPage} />}
-          {contentType && <ContentPage type={contentType} contents={contents.filter((item) => item.type === contentType)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
+          {page === 'overview' && <Overview contents={contents} connectors={connectors} aiUsage={aiUsage} onNavigate={openPage} />}
+          {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
           {page === 'health' && <HealthPage connectors={connectors}/>} 
-          {['schedule','social','website','seo','reports','settings'].includes(page) && <PlaceholderPage page={page} contents={contents}/>} 
+          {page === 'settings' && <CompanySettings onToast={setToast}/>}
+          {['schedule','social','website','seo','reports'].includes(page) && <PlaceholderPage page={page} contents={contents}/>}
         </>}
       </section>
     </main>
@@ -101,7 +106,7 @@ function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
   return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Vai trò quản trị được cấp bằng Firebase Authentication và Firestore.</small></section>;
 }
 
-function Overview({ contents, connectors, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; onNavigate: (page: PageKey) => void }) {
+function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; aiUsage: { requests: number; totalTokens: number; images: number }; onNavigate: (page: PageKey) => void }) {
   const published = contents.filter((item) => item.status === 'published' || item.status === 'partially_published').length;
   const actionCount = contents.flatMap((item) => item.platforms).filter((item) => item.status === 'needs_action' || item.status === 'manual_pending').length;
   return <>
@@ -110,7 +115,15 @@ function Overview({ contents, connectors, onNavigate }: { contents: ContentRecor
       <StatCard label="Tổng Content" value={contents.length} note="Video & bài viết" icon={FileText} tone="green"/>
       <StatCard label="Đã xuất bản" value={published} note="Bao gồm đăng một phần" icon={Check} tone="blue"/>
       <StatCard label="Cần xử lý" value={actionCount} note="Có thể chuyển thủ công" icon={CircleAlert} tone="amber"/>
-      <StatCard label="Connector tự động" value={connectors.filter((item) => item.mode === 'automatic').length} note="Chỉ sau feasibility PASS" icon={Link2} tone="violet"/>
+      <StatCard label="AI usage tháng này" value={aiUsage.requests} note={`${aiUsage.totalTokens.toLocaleString('vi-VN')} tokens · ${aiUsage.images} ảnh`} icon={Sparkles} tone="violet"/>
+    </div>
+    <div className="pipeline-strip">
+      <div><strong>{contents.filter((item) => item.type === 'video' && item.status === 'in_production').length}</strong><span>Video đang sản xuất</span></div>
+      <div><strong>{contents.filter((item) => item.type === 'video' && item.status === 'post_production').length}</strong><span>Video chờ hậu kỳ</span></div>
+      <div><strong>{contents.filter((item) => item.type === 'article' && item.status === 'generating').length}</strong><span>Article đang tạo</span></div>
+      <div><strong>{contents.filter((item) => item.status === 'review').length}</strong><span>Content chờ duyệt</span></div>
+      <div><strong>{contents.filter((item) => item.status === 'ready_to_publish').length}</strong><span>Sẵn sàng đăng</span></div>
+      <div><strong>{contents.filter((item) => item.status === 'published').length}</strong><span>Đã đăng</span></div>
     </div>
     <div className="two-columns">
       <section className="panel"><div className="panel-head"><div><span className="eyebrow">PIPELINE GẦN ĐÂY</span><h2>Content đang vận hành</h2></div><button className="text-button" onClick={() => onNavigate('video')}>Xem tất cả <ChevronRight size={16}/></button></div>
@@ -123,6 +136,7 @@ function Overview({ contents, connectors, onNavigate }: { contents: ContentRecor
   </>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ContentPage({ type, contents, onCreate, onToast }: { type: ContentType; contents: ContentRecord[]; onCreate: () => void; onToast: (text: string) => void }) {
   const [selected, setSelected] = useState<ContentRecord | null>(null);
   return <>
@@ -157,13 +171,13 @@ function CreateContentModal({ type, onClose, onSaved }: { type: ContentType; onC
   const [busy, setBusy] = useState(false);
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); const data = new FormData(event.currentTarget);
-    await createContent({ type, title: String(data.get('title')), topic: String(data.get('topic')), body: String(data.get('body')), masterScript: type === 'video' ? String(data.get('masterScript')) : undefined, platforms: options.filter((platform) => data.get(platform) === 'on') });
-    onSaved();
+    try { await createContent({ type, title: String(data.get('title')), topic: String(data.get('topic')), body: '', masterScript: type === 'video' ? String(data.get('masterScript') ?? '') : undefined, objective: type === 'article' ? String(data.get('objective') ?? '') : undefined, shortDescription: type === 'article' ? String(data.get('emphasis') ?? '') : undefined, sourceMaterial: type === 'article' ? String(data.get('sourceMaterial') ?? '') : undefined, notes: type === 'article' ? String(data.get('notes') ?? '') : undefined, desiredLength: type === 'article' ? String(data.get('desiredLength') ?? '') : undefined, platforms: options.filter((platform) => data.get(platform) === 'on') }); onSaved(); }
+    finally { setBusy(false); }
   };
   return <div className="modal-wrap"><button className="modal-scrim" onClick={onClose}/><form className="modal" onSubmit={submit}><div className="modal-head"><div><span className="eyebrow">TẠO MỚI</span><h2>{type === 'video' ? 'Content Video' : 'Content Bài viết'}</h2></div><button type="button" onClick={onClose}><X/></button></div>
     <label>Tiêu đề<input name="title" required placeholder="Nhập tiêu đề Content"/></label><label>Chủ đề<input name="topic" required placeholder="Chủ đề chiến dịch"/></label>
-    {type === 'video' && <label>MASTER SCRIPT<textarea name="masterScript" required rows={6} placeholder="Dán MASTER SCRIPT đã chuẩn bị bên ngoài hệ thống"/><small>AI không tạo MASTER SCRIPT.</small></label>}
-    {type === 'article' && <label>Nội dung/Brief<textarea name="body" rows={6} placeholder="Nhập brief hoặc nội dung bài viết"/></label>}
+    {type === 'video' && <label>MASTER SCRIPT<textarea name="masterScript" rows={6} placeholder="Có thể nhập ngay hoặc lưu dự án trước rồi paste sau"/><small>AI không tạo MASTER SCRIPT.</small></label>}
+    {type === 'article' && <><label>Mục tiêu bài<input name="objective" placeholder="Không bắt buộc"/></label><label>Thông tin cần nhấn mạnh<textarea name="emphasis" rows={3}/></label><label>Tài liệu nguồn<textarea name="sourceMaterial" rows={4} placeholder="Chỉ AI dùng các dữ kiện được cung cấp/xác minh"/></label><label>Ghi chú<textarea name="notes" rows={3}/></label><label>Độ dài mong muốn<input name="desiredLength" placeholder="Ví dụ: 800–1.000 từ"/></label></>}
     <fieldset><legend>Nền tảng đích</legend><div className="checkboxes">{options.map((platform) => <label key={platform}><input type="checkbox" name={platform} defaultChecked/><span>{platformLabels[platform]}</span></label>)}</div></fieldset>
     <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Tạo Content'}</button></div>
   </form></div>;

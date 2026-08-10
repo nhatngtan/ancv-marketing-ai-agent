@@ -1,13 +1,135 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import type { CompanyProfile, PlatformPublication } from '@ancv/shared';
 import { allocateContentId } from '../services/content-id.js';
-import { requireFirebaseEditor } from '../middleware/auth.js';
+import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
+import { db } from '../firebase.js';
 
 export const contentRouter = Router();
 
+const sceneFields = {
+  sceneNumber: z.number().int().min(1).max(999), title: z.string().min(1).max(200), durationEstimate: z.number().int().min(1).max(120),
+  narration: z.string().max(10_000), visualDescription: z.string().max(5_000), cameraDirection: z.string().max(2_000),
+  environment: z.string().max(2_000), characters: z.array(z.string().max(200)).max(20), continuityNotes: z.string().max(3_000),
+  generationPrompt: z.string().max(8_000), status: z.enum(['draft','approved','used']),
+};
+const sceneCreateSchema = z.object(sceneFields).partial().extend({ title: z.string().min(1).max(200) });
+const sceneUpdateSchema = z.object(sceneFields).partial().refine((value) => Object.keys(value).length > 0);
+
+async function audit(uid: string, action: string, entityId: string, detail?: Record<string, unknown>) {
+  const now = new Date().toISOString(); const ref = db().collection('auditLogs').doc();
+  await ref.set({ id: ref.id, status: 'recorded', action, entityType: 'content', entityId, detail: detail ?? {}, createdAt: now, updatedAt: now, createdBy: uid });
+}
+
+export async function loadCompanyProfile(): Promise<CompanyProfile> {
+  const data = (await db().collection('systemSettings').doc('companyProfile').get()).data() ?? {};
+  return {
+    companyName: String(data.companyName ?? ''), brandName: String(data.brandName ?? ''), website: String(data.website ?? ''),
+    introduction: String(data.introduction ?? ''), services: String(data.services ?? ''), serviceAreas: String(data.serviceAreas ?? ''),
+    contact: String(data.contact ?? ''), toneOfVoice: String(data.toneOfVoice ?? ''), defaultCta: String(data.defaultCta ?? ''),
+    approvedFacts: String(data.approvedFacts ?? ''), updatedAt: data.updatedAt, updatedBy: data.updatedBy,
+  };
+}
+
 contentRouter.post('/allocate-id', requireFirebaseEditor, async (request, response, next) => {
+  try { const payload = z.object({ type: z.enum(['video', 'article']) }).parse(request.body); response.status(201).json({ contentId: await allocateContentId(payload.type) }); }
+  catch (error) { next(error); }
+});
+
+contentRouter.get('/company-profile', requireFirebaseEditor, async (_request, response, next) => {
+  try { response.json(await loadCompanyProfile()); } catch (error) { next(error); }
+});
+
+contentRouter.put('/company-profile', requireFirebaseAdmin, async (request, response, next) => {
   try {
-    const payload = z.object({ type: z.enum(['video', 'article']) }).parse(request.body);
-    response.status(201).json({ contentId: await allocateContentId(payload.type) });
+    const input = z.object({
+      companyName: z.string().max(300), brandName: z.string().max(200), website: z.string().max(500), introduction: z.string().max(10_000),
+      services: z.string().max(10_000), serviceAreas: z.string().max(5_000), contact: z.string().max(5_000), toneOfVoice: z.string().max(5_000),
+      defaultCta: z.string().max(2_000), approvedFacts: z.string().max(20_000),
+    }).parse(request.body);
+    const now = new Date().toISOString(); const uid = response.locals.identity.uid;
+    await db().collection('systemSettings').doc('companyProfile').set({ id: 'companyProfile', status: 'active', createdAt: now, createdBy: uid, ...input, updatedAt: now, updatedBy: uid }, { merge: true });
+    await audit(uid, 'company_profile.update', 'companyProfile'); response.json({ ...input, updatedAt: now, updatedBy: uid });
   } catch (error) { next(error); }
+});
+
+contentRouter.use(requireFirebaseEditor);
+
+contentRouter.get('/:contentId/scenes', async (request, response, next) => {
+  try {
+    const snapshot = await db().collection('scenes').where('contentDocId', '==', request.params.contentId).get();
+    response.json({ scenes: snapshot.docs.map((item) => item.data()).sort((a,b) => a.sceneNumber - b.sceneNumber) });
+  } catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/scenes', async (request, response, next) => {
+  try {
+    const input = sceneCreateSchema.parse(request.body); const uid = response.locals.identity.uid; const now = new Date().toISOString();
+    const existing = await db().collection('scenes').where('contentDocId', '==', request.params.contentId).get();
+    const sceneNumber = input.sceneNumber ?? Math.max(0, ...existing.docs.map((item) => Number(item.data().sceneNumber ?? 0))) + 1;
+    const ref = db().collection('scenes').doc();
+    const record = { id: ref.id, contentDocId: request.params.contentId, sceneNumber, title: input.title, durationEstimate: input.durationEstimate ?? 5, narration: input.narration ?? '', visualDescription: input.visualDescription ?? '', cameraDirection: input.cameraDirection ?? '', environment: input.environment ?? '', characters: input.characters ?? [], continuityNotes: input.continuityNotes ?? '', generationPrompt: input.generationPrompt ?? '', status: input.status ?? 'draft', createdAt: now, updatedAt: now, createdBy: uid };
+    await ref.set(record); await audit(uid, 'scene.create', request.params.contentId, { sceneId: ref.id }); response.status(201).json(record);
+  } catch (error) { next(error); }
+});
+
+contentRouter.patch('/:contentId/scenes/:sceneId', async (request, response, next) => {
+  try { const input = sceneUpdateSchema.parse(request.body); const uid = response.locals.identity.uid; await db().collection('scenes').doc(request.params.sceneId).update({ ...input, updatedAt: new Date().toISOString() }); await audit(uid, 'scene.update', request.params.contentId, { sceneId: request.params.sceneId }); response.json({ ok: true }); }
+  catch (error) { next(error); }
+});
+
+contentRouter.delete('/:contentId/scenes/:sceneId', async (request, response, next) => {
+  try { const uid = response.locals.identity.uid; await db().collection('scenes').doc(request.params.sceneId).delete(); await audit(uid, 'scene.delete', request.params.contentId, { sceneId: request.params.sceneId }); response.status(204).end(); }
+  catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/scenes/:sceneId/duplicate', async (request, response, next) => {
+  try {
+    const source = await db().collection('scenes').doc(request.params.sceneId).get(); if (!source.exists || source.data()?.contentDocId !== request.params.contentId) { response.status(404).json({ error: 'SCENE_NOT_FOUND' }); return; }
+    const all = await db().collection('scenes').where('contentDocId', '==', request.params.contentId).get(); const uid = response.locals.identity.uid; const now = new Date().toISOString(); const ref = db().collection('scenes').doc();
+    const record = { ...source.data(), id: ref.id, sceneNumber: Math.max(0, ...all.docs.map((item) => Number(item.data().sceneNumber ?? 0))) + 1, title: `${source.data()?.title} (bản sao)`, status: 'draft', createdAt: now, updatedAt: now, createdBy: uid };
+    await ref.set(record); await audit(uid, 'scene.duplicate', request.params.contentId, { sourceSceneId: request.params.sceneId, sceneId: ref.id }); response.status(201).json(record);
+  } catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/scenes/reorder', async (request, response, next) => {
+  try {
+    const { sceneIds } = z.object({ sceneIds: z.array(z.string().min(1)).min(1).max(120) }).parse(request.body); const batch = db().batch(); const now = new Date().toISOString();
+    sceneIds.forEach((id,index) => batch.update(db().collection('scenes').doc(id), { sceneNumber: index + 1, updatedAt: now })); await batch.commit(); await audit(response.locals.identity.uid, 'scene.reorder', request.params.contentId, { count: sceneIds.length }); response.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/approve', async (request, response, next) => {
+  try { const uid = response.locals.identity.uid; const now = new Date().toISOString(); await db().collection('contents').doc(request.params.contentId).update({ status: 'approved', approvedAt: now, approvedBy: uid, updatedAt: now }); await audit(uid, 'content.approve', request.params.contentId); response.json({ status: 'approved', approvedAt: now }); }
+  catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/ready', async (request, response, next) => {
+  try { const uid = response.locals.identity.uid; const now = new Date().toISOString(); await db().collection('contents').doc(request.params.contentId).update({ status: 'ready_to_publish', updatedAt: now }); await audit(uid, 'content.ready_to_publish', request.params.contentId); response.json({ status: 'ready_to_publish' }); }
+  catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/status', async (request, response, next) => {
+  try { const { status } = z.object({ status: z.enum(['draft','in_production','post_production','awaiting_copy','review','approved','ready_to_publish','test','archived']) }).parse(request.body); const uid = response.locals.identity.uid; const now = new Date().toISOString(); await db().collection('contents').doc(request.params.contentId).update({ status, updatedAt: now }); await audit(uid, 'content.status', request.params.contentId, { status }); response.json({ status }); }
+  catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/audit', async (request, response, next) => {
+  try { const input = z.object({ action: z.enum(['upload_raw','upload_final','select_asset']), detail: z.record(z.string(), z.unknown()).default({}) }).parse(request.body); await audit(response.locals.identity.uid, `content.${input.action}`, request.params.contentId, input.detail); response.status(201).json({ ok: true }); }
+  catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/manual-publish', async (request, response, next) => {
+  try {
+    const input = z.object({ platform: z.enum(['youtube','facebook','tiktok','linkedin','zalo','website']), postUrl: z.string().url().max(2_000), platformPostId: z.string().max(500).optional(), note: z.string().max(2_000).optional() }).parse(request.body);
+    const ref = db().collection('contents').doc(request.params.contentId); const snapshot = await ref.get(); if (!snapshot.exists) { response.status(404).json({ error: 'CONTENT_NOT_FOUND' }); return; }
+    const current = (snapshot.data()?.platforms ?? []) as PlatformPublication[]; const now = new Date().toISOString();
+    const platforms = current.map((item) => item.platform === input.platform ? { ...item, status: 'published', postUrl: input.postUrl, platformPostId: input.platformPostId, note: input.note, publishedAt: now } : item);
+    const status = platforms.every((item) => item.status === 'published') ? 'published' : 'partially_published'; await ref.update({ platforms, status, updatedAt: now }); await audit(response.locals.identity.uid, 'content.manual_publish', request.params.contentId, { platform: input.platform, postUrl: input.postUrl }); response.json({ platforms, status });
+  } catch (error) { next(error); }
+});
+
+contentRouter.get('/:contentId/scene-list.tsv', async (request, response, next) => {
+  try { const snapshot = await db().collection('scenes').where('contentDocId', '==', request.params.contentId).get(); const rows = snapshot.docs.map((item) => item.data()).sort((a,b) => a.sceneNumber-b.sceneNumber); const tsv = ['Scene\tTiêu đề\tThời lượng\tNarration\tPrompt Google Flow', ...rows.map((item) => [item.sceneNumber,item.title,item.durationEstimate,item.narration,item.generationPrompt].map((value) => String(value ?? '').replace(/[\t\r\n]+/g,' ')).join('\t'))].join('\n'); response.type('text/tab-separated-values').send(tsv); }
+  catch (error) { next(error); }
 });
