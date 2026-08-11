@@ -12,6 +12,14 @@ Tạo app/OAuth đúng owner ANCV; test lần lượt YouTube, GA4, Search Conso
 
 Hoàn thiện Video/Article Studio, structured scene, Google Flow prompt manual fallback, Video Raw takes, CapCut handoff, Video Final, platform copy riêng, Article/image generation, Company Profile, approval, `aiJobs`, `aiUsage`, audit và cost protection. Không tự publish.
 
+## Giai đoạn 2C — Connectivity và UAT
+
+Core production/UAT đã PASS. GA4, Search Console và WordPress giữ safe mode theo quyền thực tế. WordPress hiện chỉ cho phép connectivity test bằng GET read-only; write/media/publishing chưa được kiểm tra.
+
+## Giai đoạn 2D — Google Flow Worker Experimental V1
+
+Chờ đặc tả triển khai đầy đủ được đưa vào repository/task. Flow Worker vẫn experimental, có manual fallback và không được trở thành dependency của Core.
+
 ## Giai đoạn 3 — Distribution Connector production
 
 Implement phần PASS qua `PublishingProvider`/`AnalyticsProvider`; token trong Secret Manager; scheduler chỉ gọi connector đủ trạng thái. Test revoke token, quota, partial failure và idempotent replay.

@@ -6,6 +6,7 @@ import { requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
 import { testGA4, testSearchConsole, type FeasibilityResult } from '../services/google-feasibility.js';
 import { testWebsite } from '../services/website-feasibility.js';
+import { config } from '../config.js';
 
 export const connectorRouter = Router();
 
@@ -56,7 +57,10 @@ connectorRouter.post('/test', requireFirebaseEditor, async (request, response, n
     let result: FeasibilityResult;
     if (input.platform === 'ga4') result = await testGA4();
     else if (input.platform === 'search_console') result = await testSearchConsole();
-    else result = await testWebsite(input.url);
+    else result = await testWebsite(input.url, config.wordpressUsername && config.wordpressApplicationPassword ? {
+      username: config.wordpressUsername,
+      applicationPassword: config.wordpressApplicationPassword,
+    } : undefined);
     await persistResult(result, testedBy);
     response.json(result);
   } catch (error) { next(error); }

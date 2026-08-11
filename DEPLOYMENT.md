@@ -67,6 +67,8 @@ Sau deploy, xác minh IAM: giữ nguyên hai Owner đã được phê duyệt; C
 
 ### Thêm WordPress credential an toàn
 
-Tạo Application Password trên user kỹ thuật WordPress có quyền tối thiểu. Thêm username/password thành secret version bằng Secret Manager, không ghi vào `.env` hoặc command history chia sẻ. Sau đó deploy lại; xác minh `/wp/v2/users/me?context=edit`, tạo bài ở trạng thái `draft`, upload media nhỏ và xóa/revoke dữ liệu test theo quy trình CMS.
+Tạo Application Password trên user kỹ thuật WordPress có quyền tối thiểu. Thêm username/password thành secret version bằng Secret Manager, không ghi vào `.env` hoặc command history chia sẻ. Sau đó deploy lại và chỉ xác minh read-only bằng `GET /wp-json/` cùng authenticated `GET /wp-json/wp/v2/users/me?context=edit`.
+
+Trong thời gian Website đang xây dựng, tuyệt đối không chạy POST/PUT/PATCH/DELETE, không tạo draft, không upload media và không publish. Write feasibility chỉ được mở bằng một phê duyệt scope riêng sau này.
 
 Không gắn ADC hoặc refresh token cá nhân vào Cloud Run. Việc thêm secret version và cấu hình property phải được thực hiện qua Secret Manager/Cloud Run environment, không commit `.env`.

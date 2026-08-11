@@ -33,7 +33,8 @@ Application không hard-code email cá nhân để quyết định role. Quyền
 - [ ] Kiểm tra Zalo App/OA owner và token lifecycle.
 - [ ] Chọn/tạo GA4 property ANCV, cấp Viewer cho production Service Account, cấu hình numeric property ID và chạy `runReport`.
 - [ ] Verify `sc-domain:anninhcanhve.com`, cấp quyền cho production Service Account, cấu hình site URL và chạy `searchAnalytics.query`.
-- [ ] Tạo WordPress user kỹ thuật quyền tối thiểu và Application Password; thêm version cho hai secret, test `/users/me`, bài nháp và media.
+- [ ] Tạo WordPress Application Password cho user kỹ thuật `editor01`; thêm version vào `wordpress-application-password` và chạy authenticated GET `/users/me`.
+- [ ] Chỉ khi Website sẵn sàng và có phê duyệt scope mới: lập kế hoạch riêng để test draft/media/write; không suy ra quyền publishing từ connectivity PASS.
 - [ ] Kiểm tra Website CMS owner, domain/DNS, hosting và khả năng chuyển credential sang Corporate Admin.
 - [ ] Kiểm tra Google Flow subscription/session; Flow vẫn là experimental và không phải dependency.
 - [ ] Rotate/revoke credential development chỉ sau khi production credential đã test PASS.
