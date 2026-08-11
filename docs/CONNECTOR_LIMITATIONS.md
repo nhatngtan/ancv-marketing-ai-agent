@@ -2,7 +2,7 @@
 
 | Connector | Giới hạn / evidence hiện tại | Chưa xác minh cho ANCV | Safe mode |
 | --- | --- | --- | --- |
-| YouTube | Studio UI xác minh kênh ANCV `UCy-H7__UvdWcTbUax3RGDcA`; Data/Analytics GET thật bằng ADC trả 403 thiếu OAuth scope. Ba API đã bật trong project | OAuth client riêng, user consent, scopes thực cấp, refresh token, private upload, metadata, Analytics query, audit/quota thực tế | Manual |
+| YouTube | OAuth/refresh PASS; `channels.list(mine=true)` đúng channel; Analytics HTTP 200; đúng 01 `videos.insert` PRIVATE PASS, Video ID `OSbbjviru7A`, không retry | Public/unlisted, update/delete/scheduling, OAuth verification, compliance audit và quota khi vận hành định kỳ | Semi-automatic |
 | Facebook | Chưa có Meta App/Page token; portal yêu cầu login; Page candidate cũ trả unavailable. Docs xác nhận post/photo/video + Insights có API nhưng không phải evidence quyền ANCV | Page ID và Page task, app ownership/transfer, `pages_*`, `publish_video`, `read_insights`, App Review/Business Verification, request thật | Manual |
 | TikTok | Chưa có App/token/creator evidence. Docs: `video.publish` Direct Post, `video.upload` inbox; unaudited chỉ private/SELF_ONLY, init 6 request/phút/token | Developer app, creator eligibility, OAuth scopes, refresh token, audit, domain/URL ownership, request creator info/read/upload an toàn | Manual |
 | LinkedIn | Chưa có App/token/Organization URN. Community Management là vetted product; Development tier 500 calls/app và 100 calls/member/24h | Organization Page/role, legal-org vetting, app ownership/transfer, scopes, Development/Standard approval, request thật | Manual |
@@ -19,6 +19,8 @@ WordPress credentials được mount từ Secret Manager, không commit và khô
 Connector error không xóa snapshot cũ. Dashboard hiển thị dữ liệu cập nhật lần cuối hoặc “Dữ liệu không khả dụng”, không thay dữ liệu thiếu bằng số 0 giả.
 
 Phase 2E không gửi POST/PUT/PATCH/DELETE đến bất kỳ social platform nào. `not_tested` có nghĩa là credential/request nghiệp vụ chưa PASS; không đồng nghĩa tài liệu không có endpoint hoặc nền tảng vĩnh viễn unavailable.
+
+Phase 2F-A chỉ thay đổi YouTube. OAuth credential thuộc project ANCV và refresh token consent bởi `ancv.marketing@gmail.com`; tất cả nằm trong Secret Manager. Upload feasibility duy nhất là video `OSbbjviru7A` ở chế độ Private. Không được dùng PASS này để suy ra public publishing, scheduling, update/delete hay production automation đã được duyệt. Manual fallback vẫn là chế độ vận hành chính thức.
 
 ## Ownership và bàn giao
 

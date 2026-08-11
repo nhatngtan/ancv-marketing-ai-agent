@@ -5,7 +5,7 @@ Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành
 | Platform | Auth | Publish | Analytics | Review/Audit | Mode | Ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | OpenAI | Secret Manager + Cloud Run production Service Account PASS | Responses API PASS; Image API PASS | Usage evidence PASS | N/A | Tự động | Request thật từ Cloud Run, không lưu ảnh test |
-| YouTube | Channel UI PASS; API OAuth chưa PASS, GET trả 403 thiếu scope | Upload private/unlisted NOT TESTED | Analytics GET trả 403 thiếu scope | Audit/upload restriction NOT TESTED | Thủ công | Kênh `UCy-H7__UvdWcTbUax3RGDcA` xác minh trên Studio; cần OAuth client + refresh token riêng |
+| YouTube | OAuth + refresh token PASS; `channels.list(mine=true)` khớp đúng channel | `videos.insert` PRIVATE PASS đúng 01 video; public/unlisted/update/delete/scheduling NOT TESTED | `reports.query` PASS, HTTP 200, 7 dòng | Sensitive scopes chưa verified; compliance audit/public automation chưa xác minh | Bán tự động | Channel `UCy-H7__UvdWcTbUax3RGDcA`; test Video ID `OSbbjviru7A`, private, 1 attempt, không retry |
 | Facebook | Chưa có Meta App/Page token; portal yêu cầu đăng nhập | Page post/video NOT TESTED | Page Insights NOT TESTED | App Review/Business Verification chưa bắt đầu | Thủ công | Page ID/quyền quản trị chưa xác minh; URL ứng viên cũ hiện unavailable |
 | TikTok | Chưa có Developer App/token; portal yêu cầu đăng nhập | Direct Post/upload NOT TESTED | Display/metrics NOT TESTED | Audit chưa bắt đầu | Thủ công | Chưa xác minh creator account; unaudited Direct Post chỉ private/SELF_ONLY |
 | LinkedIn | Chưa có App/token; portal yêu cầu đăng nhập | Posts API NOT TESTED | Organization analytics NOT TESTED | Community Management review chưa bắt đầu | Thủ công | Chưa xác minh Organization URN/Page role |
@@ -71,6 +71,16 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 - Facebook Page candidate `anninhcanhve.chuyengiaanninh` trả “content unavailable”; không dùng URL cũ này làm bằng chứng Page còn tồn tại hoặc account có quyền.
 - LinkedIn chưa tìm thấy Organization Page ANCV được xác minh; kết quả công khai chỉ cho thấy profile cá nhân trùng tên. TikTok chưa xác minh creator account. Website công khai chỉ có Zalo contact `0932773999`, chưa có OA ID.
 - Firestore đã lưu một `connectorTests` record mới cho mỗi platform và merge snapshot vào `connectors/{platform}`. Cả 5 giữ `not_tested / manual`; UI Kết nối đọc trực tiếp các snapshot này và không cần deploy.
+
+## Evidence Phase 2F-A — YouTube OAuth — 2026-08-11
+
+- Consent thực hiện bằng `ancv.marketing@gmail.com` qua Desktop OAuth client chuyên biệt và loopback callback localhost. Firebase Web Client hiện có không bị thay đổi.
+- Scope yêu cầu và scope thực cấp đều khớp: `youtube.readonly`, `youtube.upload`, `yt-analytics.readonly`. Client ID, client secret và refresh token được lưu riêng trong Secret Manager; không lưu token vào source, Git, Firestore hoặc tài liệu.
+- Refresh-token exchange PASS. `channels.list(mine=true)` trả đúng **Giải Pháp An Ninh Cảnh Vệ**, Channel ID `UCy-H7__UvdWcTbUax3RGDcA`; không có account/channel mismatch.
+- `reports.query` thật với `channel==MINE`, khoảng `2026-08-01..2026-08-07`, metric `views`, dimension `day` trả HTTP 200 và 7 dòng.
+- Người dùng phê duyệt upload file `TD Di An BD 4.mp4`. `videos.insert` resumable tạo đúng 01 video `OSbbjviru7A`; đọc lại metadata xác nhận title `TEST PRIVATE - ANCV API - TD Di An BD 4`, đúng channel và `privacyStatus=private`.
+- Upload có đúng 1 attempt, không retry. Evidence nằm ở `connectorTests/youtube-private-2afd0c97f552ce041e711816` và `connectorTests/youtube-oauth-feasibility-20260811`.
+- Connector snapshot là `partially_available / semi_automatic`: Auth PASS, Analytics verified, Publishing partial. Chưa bật Automatic vì public/unlisted, update/delete/scheduling, OAuth verification và compliance audit chưa được xác minh.
 
 ### Capability theo tài liệu — chưa phải PASS
 
