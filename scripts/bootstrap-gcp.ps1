@@ -39,6 +39,9 @@ foreach ($name in $serviceAccounts) {
   if ($LASTEXITCODE -ne 0) { & $gcloud iam service-accounts create $name --project $ProjectId --display-name="ANCV $name" }
 }
 
+$projectNumber = & $gcloud projects describe $ProjectId --format='value(projectNumber)'
+$storageRulesServiceAgent = "service-$projectNumber@gcp-sa-firebasestorage.iam.gserviceaccount.com"
+
 $bindings = @(
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/datastore.user' },
   @{ Member="serviceAccount:ancv-cloud-run@$ProjectId.iam.gserviceaccount.com"; Role='roles/firebaseauth.viewer' },
@@ -47,7 +50,8 @@ $bindings = @(
   @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/cloudtasks.enqueuer' },
   @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/workflows.invoker' },
   @{ Member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com"; Role='roles/logging.logWriter' },
-  @{ Member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com"; Role='roles/logging.logWriter' }
+  @{ Member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com"; Role='roles/logging.logWriter' },
+  @{ Member="serviceAccount:$storageRulesServiceAgent"; Role='roles/firebaserules.firestoreServiceAgent' }
 )
 foreach ($binding in $bindings) {
   & $gcloud projects add-iam-policy-binding $ProjectId "--member=$($binding.Member)" "--role=$($binding.Role)" --quiet | Out-Null

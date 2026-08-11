@@ -51,3 +51,10 @@ Cập nhật: 2026-08-10. Chỉ đánh dấu PASS khi request thật đã thành
 ## Điều kiện chuyển `available`
 
 Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ production-like thành công, refresh-token lifecycle nếu dùng user OAuth, quota phù hợp và không còn review blocker. PASS một phần chỉ được `partially_available`; Admin vẫn có thể override về mode thấp hơn.
+
+## Recheck Phase 2C — 2026-08-11
+
+- WordPress: `wordpress-username` và `wordpress-application-password` chưa có version enabled; không chạy request authenticated và giữ `partially_available / semi_automatic`.
+- GA4: `accountSummaries.list` bằng production Service Account PASS, `accessiblePropertyCount = 0`; `runReport` chưa được phép chạy và connector giữ manual/no-data.
+- Search Console: `sites.list` bằng production Service Account PASS, `accessibleSiteCount = 0`; `searchAnalytics.query` chưa được phép chạy và connector giữ manual/no-data.
+- Website HTML công khai không được dùng làm bằng chứng cho quyền GA4 Data API hoặc Search Console API.

@@ -13,6 +13,7 @@
 - OpenAI key production chỉ được gắn từ Secret Manager `openai-api-key`; thay key không cần sửa source.
 
 - Cloud Run xác minh Firebase ID token (kể cả revocation) bằng Service Account production với `roles/firebaseauth.viewer`; không dùng credential cá nhân.
+- Storage Rules đọc `users/{uid}` để kiểm tra role; Firebase Storage service agent chỉ được cấp `roles/firebaserules.firestoreServiceAgent` phục vụ cross-service rule evaluation.
 
 ## Báo cáo lỗ hổng
 

@@ -93,7 +93,7 @@ export default function App() {
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
           {page === 'health' && <HealthPage connectors={connectors}/>} 
           {page === 'settings' && <CompanySettings onToast={setToast}/>}
-          {['schedule','social','website','seo','reports'].includes(page) && <PlaceholderPage page={page} contents={contents}/>}
+          {['schedule','social','website','seo','reports'].includes(page) && <PlaceholderPage page={page} contents={contents} connectors={connectors}/>}
         </>}
       </section>
     </main>
@@ -109,6 +109,10 @@ function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
 function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; aiUsage: { requests: number; totalTokens: number; images: number }; onNavigate: (page: PageKey) => void }) {
   const published = contents.filter((item) => item.status === 'published' || item.status === 'partially_published').length;
   const actionCount = contents.flatMap((item) => item.platforms).filter((item) => item.status === 'needs_action' || item.status === 'manual_pending').length;
+  const analyticsSources = [
+    { platform: 'ga4' as const, label: 'GA4' },
+    { platform: 'search_console' as const, label: 'Search Console' },
+  ].map((source) => ({ ...source, connector: connectors.find((item) => item.platform === source.platform) }));
   return <>
     <div className="hero-row"><div><Badge tone="success">Core Marketing OS</Badge><h1>Điều hành Content rõ ràng,<br/><em>không bị khóa bởi API.</em></h1><p>Quản lý sản xuất, duyệt, đăng đa nền tảng và dữ liệu Marketing trong một luồng an toàn.</p></div><div className="hero-orbit"><span>CORE</span><i className="orbit-one">Content</i><i className="orbit-two">KPI</i><i className="orbit-three">API</i></div></div>
     <div className="stats-grid">
@@ -125,6 +129,9 @@ function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: Con
       <div><strong>{contents.filter((item) => item.status === 'ready_to_publish').length}</strong><span>Sẵn sàng đăng</span></div>
       <div><strong>{contents.filter((item) => item.status === 'published').length}</strong><span>Đã đăng</span></div>
     </div>
+    <section className="panel analytics-status-panel"><div className="panel-head"><div><span className="eyebrow">ANALYTICS SOURCES</span><h2>Dữ liệu Website & SEO</h2></div></div>
+      {analyticsSources.map(({ platform, label, connector }) => <div className="health-row" key={platform}><div className={`health-indicator ${connector?.status === 'available' ? 'operational' : ''}`}></div><div><strong>{label}</strong><small>{connector?.testedAt ? `Kiểm tra lần cuối: ${new Date(connector.testedAt).toLocaleString('vi-VN')}` : 'Chưa có lần kiểm tra thành công'}</small></div><Badge tone={connector?.status === 'available' ? 'success' : 'neutral'}>{connector?.status === 'available' ? 'Đã kết nối' : 'Chưa kết nối'}</Badge></div>)}
+    </section>
     <div className="two-columns">
       <section className="panel"><div className="panel-head"><div><span className="eyebrow">PIPELINE GẦN ĐÂY</span><h2>Content đang vận hành</h2></div><button className="text-button" onClick={() => onNavigate('video')}>Xem tất cả <ChevronRight size={16}/></button></div>
         <div className="content-list">{contents.slice(0,4).map((item) => <div className="content-row" key={item.id}><div className={`type-icon ${item.type}`} >{item.type === 'video' ? <Video/> : <FileText/>}</div><div className="grow"><strong>{item.title}</strong><span>{item.contentId}</span></div><Badge tone={item.status === 'partially_published' ? 'warning' : item.status === 'published' ? 'success' : 'info'}>{item.status === 'partially_published' ? 'Đã đăng một phần' : item.status === 'review' ? 'Chờ duyệt' : item.status}</Badge></div>)}</div>
@@ -215,7 +222,10 @@ function HealthPage({ connectors }: { connectors: ConnectorRecord[] }) {
   return <><div className="page-heading"><div><span className="eyebrow">SAFE FAILURE</span><h1>Tình trạng hệ thống</h1><p>Mỗi thành phần được giám sát độc lập; lỗi connector không làm Core dừng.</p></div><div className="health-summary"><span></span>Core đang hoạt động</div></div><div className="health-groups">{Object.entries(groups).map(([name, items]) => <section className="panel" key={name}><div className="panel-head"><h2>{name}</h2><small>Dữ liệu cập nhật lần cuối: {new Date().toLocaleTimeString('vi-VN')}</small></div>{items.map((item) => <div className="health-row" key={item.key}><div className={`health-indicator ${item.status}`}></div><div><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</div><Badge tone={item.status === 'operational' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{healthVi[item.status]}</Badge></div>)}</section>)}</div></>;
 }
 
-function PlaceholderPage({ page, contents }: { page: PageKey; contents: ContentRecord[] }) {
+function PlaceholderPage({ page, contents, connectors }: { page: PageKey; contents: ContentRecord[]; connectors: ConnectorRecord[] }) {
   const messages: Partial<Record<PageKey, string>> = { schedule: 'Lịch nội bộ đọc từ Firestore; connector lỗi không làm mất lịch.', social: 'Theo dõi kết quả đăng độc lập theo từng nền tảng.', website: 'Sẵn sàng cho API-first hoặc quy trình copy/upload thủ công.', seo: 'Search Console sẽ được bật sau feasibility test property access.', reports: 'Báo cáo chỉ dùng nguồn có dữ liệu và luôn ghi rõ nguồn thiếu.', settings: 'Cấu hình hệ thống, vai trò và chính sách connector.' };
+  if (page === 'seo' && connectors.find((item) => item.platform === 'search_console')?.status !== 'available') {
+    return <><div className="page-heading"><div><span className="eyebrow">GOOGLE SEARCH CONSOLE</span><h1>SEO</h1><p>Dữ liệu chỉ xuất hiện sau khi property access và Search Analytics request thực tế PASS.</p></div></div><section className="panel placeholder"><CircleAlert size={28}/><h2>Chưa kết nối</h2><p>Không có dữ liệu giả. Hãy cấp quyền property cho Service Account production rồi chạy Test lại ở trang Kết nối.</p></section></>;
+  }
   return <><div className="page-heading"><div><span className="eyebrow">CORE MODULE</span><h1>{pageTitle(page)}</h1><p>{messages[page]}</p></div></div><section className="panel placeholder"><Sparkles size={28}/><h2>Module nền móng đã sẵn sàng</h2><p>Dữ liệu hiện có: {contents.length} Content. Chức năng nâng cao sẽ được mở theo roadmap mà không thay đổi kiến trúc Core.</p></section></>;
 }
