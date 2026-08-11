@@ -5,11 +5,11 @@ Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành
 | Platform | Auth | Publish | Analytics | Review/Audit | Mode | Ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | OpenAI | Secret Manager + Cloud Run production Service Account PASS | Responses API PASS; Image API PASS | Usage evidence PASS | N/A | Tự động | Request thật từ Cloud Run, không lưu ảnh test |
-| YouTube | Chưa test OAuth | Chưa test upload | Chưa test Data/Analytics API | Chưa test audit thực tế | Thủ công | Cần channel role, scope, upload private và refresh-token test |
-| Facebook | Chưa test Page token | Chưa test Page post/video | Chưa test insights | Chưa test App Review/Business Verification | Thủ công | Không suy ra quyền account từ tài liệu |
-| TikTok | Chưa test OAuth | Chưa test Direct Post/upload | Chưa test analytics | Chưa test audit | Thủ công | Cần app ANCV và test scope thực cấp |
-| LinkedIn | Chưa test OAuth | Chưa test Posts API | Chưa test analytics | Chưa test Community Management review | Thủ công | Cần organization role và app program access |
-| Zalo | Chưa test OA token | Chưa test OA API | Chưa test OA analytics | Chưa test OA/app conditions | Thủ công | Cần app/OA đúng owner và token lifecycle |
+| YouTube | Channel UI PASS; API OAuth chưa PASS, GET trả 403 thiếu scope | Upload private/unlisted NOT TESTED | Analytics GET trả 403 thiếu scope | Audit/upload restriction NOT TESTED | Thủ công | Kênh `UCy-H7__UvdWcTbUax3RGDcA` xác minh trên Studio; cần OAuth client + refresh token riêng |
+| Facebook | Chưa có Meta App/Page token; portal yêu cầu đăng nhập | Page post/video NOT TESTED | Page Insights NOT TESTED | App Review/Business Verification chưa bắt đầu | Thủ công | Page ID/quyền quản trị chưa xác minh; URL ứng viên cũ hiện unavailable |
+| TikTok | Chưa có Developer App/token; portal yêu cầu đăng nhập | Direct Post/upload NOT TESTED | Display/metrics NOT TESTED | Audit chưa bắt đầu | Thủ công | Chưa xác minh creator account; unaudited Direct Post chỉ private/SELF_ONLY |
+| LinkedIn | Chưa có App/token; portal yêu cầu đăng nhập | Posts API NOT TESTED | Organization analytics NOT TESTED | Community Management review chưa bắt đầu | Thủ công | Chưa xác minh Organization URN/Page role |
+| Zalo | Chưa có Zalo App/OA token; portal yêu cầu đăng nhập | Article/video OA API NOT TESTED | OA analytics NOT TESTED | OA/App/plan chưa xác minh | Thủ công | `zalo.me/0932773999` chỉ là contact link công khai, không phải OA ID evidence |
 | Website | Application Password + authenticated `/users/me` PASS | NOT TESTED | Chưa test | N/A | Bán tự động | Website đang xây dựng; connectivity check chỉ dùng GET read-only |
 | GA4 | Runtime Service Account list PASS | N/A | Chưa PASS `runReport` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development cũng không thấy property ANCV |
 | Search Console | Runtime Service Account list PASS | N/A | Chưa PASS `searchAnalytics.query` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development không có `anninhcanhve.com` |
@@ -44,11 +44,11 @@ Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành
 - GA4: [Data API quickstart](https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart), [Admin API quickstart](https://developers.google.com/analytics/devguides/config/admin/v1/quickstart), [Data API quotas](https://developers.google.com/analytics/devguides/reporting/data/v1/quotas).
 - Search Console: [OAuth authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing), [property users and permissions](https://support.google.com/webmasters/answer/7687615), [Search Analytics query](https://developers.google.com/webmaster-tools/v1/searchanalytics/query), [usage limits](https://developers.google.com/webmaster-tools/limits).
 - WordPress: [REST authentication](https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/), [Application Passwords](https://developer.wordpress.org/rest-api/reference/application-passwords/).
-- YouTube: [OAuth](https://developers.google.com/youtube/v3/guides/authentication), [Videos API](https://developers.google.com/youtube/v3/docs/videos), [quota/audit](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).
-- Facebook: [Pages API](https://developers.facebook.com/docs/pages-api/), [App Review](https://developers.facebook.com/docs/app-review/).
-- TikTok: [Content Posting API](https://developers.tiktok.com/products/content-posting-api), [sharing guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines/).
-- LinkedIn: [Posts API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api), [Community Management review](https://learn.microsoft.com/en-us/linkedin/marketing/community-management-app-review).
-- Zalo: [Zalo for Developers](https://developers.zalo.me/docs/).
+- YouTube: [OAuth](https://developers.google.com/youtube/v3/guides/authentication), [Videos API](https://developers.google.com/youtube/v3/docs/videos), [Analytics reference](https://developers.google.com/youtube/analytics/reference), [quota/audit](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).
+- Facebook: [Pages posts](https://developers.facebook.com/documentation/pages-api/posts), [Page Insights](https://developers.facebook.com/docs/graph-api/reference/page/insights/), [Permissions](https://developers.facebook.com/docs/permissions), [App Review](https://developers.facebook.com/docs/app-review/).
+- TikTok: [Direct Post](https://developers.tiktok.com/doc/content-posting-api-reference-direct-post), [Upload](https://developers.tiktok.com/doc/content-posting-api-reference-upload-video), [Display API](https://developers.tiktok.com/doc/display-api-overview), [Scopes](https://developers.tiktok.com/doc/tiktok-api-scopes), [sharing guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines/).
+- LinkedIn: [Posts API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api), [Community Management overview](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/community-management-overview), [App Review](https://learn.microsoft.com/en-us/linkedin/marketing/community-management-app-review), [rate limits](https://learn.microsoft.com/en-us/linkedin/shared/api-guide/concepts/rate-limits).
+- Zalo: [OA OpenAPI overview](https://developers.zalo.me/docs/official-account/bat-dau/kham-pha), [OA Content API](https://developers.zalo.me/docs/official-account/noi-dung/tong-quan), [authorization](https://developers.zalo.me/docs/official-account/bat-dau/xac-thuc-va-uy-quyen-cho-ung-dung-new).
 
 ## Điều kiện chuyển `available`
 
@@ -60,3 +60,22 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 - GA4: `accountSummaries.list` bằng production Service Account PASS, `accessiblePropertyCount = 0`; `runReport` chưa được phép chạy và connector giữ manual/no-data.
 - Search Console: `sites.list` bằng production Service Account PASS, `accessibleSiteCount = 0`; `searchAnalytics.query` chưa được phép chạy và connector giữ manual/no-data.
 - Website HTML công khai không được dùng làm bằng chứng cho quyền GA4 Data API hoặc Search Console API.
+
+## Evidence Phase 2E — Social API — 2026-08-11
+
+- Identity pre-flight PASS: gcloud, Firebase và ADC đều là `nhat.ngtan@gmail.com`; project `ancv-marketing-ai-agent`; cả `nhat.ngtan@gmail.com` và `ancv.marketing@gmail.com` vẫn là Owner.
+- Không có secret container mang tên YouTube/Facebook/Meta/LinkedIn/TikTok/Zalo. Không đọc hoặc ghi credential ngoài Secret Manager; không gọi OpenAI, Google Flow hoặc Social write API.
+- YouTube Data API, YouTube Analytics API và YouTube Reporting API đã được bật trong đúng project ANCV. YouTube Studio bằng `ancv.marketing@gmail.com` xác minh kênh **Giải Pháp An Ninh Cảnh Vệ**, Channel ID `UCy-H7__UvdWcTbUax3RGDcA`.
+- Request thật `channels.list(mine=true)` và `reports.query(channel==MINE)` bằng ADC đều trả HTTP 403 `insufficientPermissions`. Điều này xác nhận credential hiện tại thiếu YouTube OAuth scopes; không phải bằng chứng channel/API unavailable.
+- Meta Developer, LinkedIn Developer, TikTok Developer và Zalo Developer portal đều dừng ở màn hình đăng nhập. Không có App ID/token nên không gửi request API giả hoặc request không có credential chỉ để tạo lỗi.
+- Facebook Page candidate `anninhcanhve.chuyengiaanninh` trả “content unavailable”; không dùng URL cũ này làm bằng chứng Page còn tồn tại hoặc account có quyền.
+- LinkedIn chưa tìm thấy Organization Page ANCV được xác minh; kết quả công khai chỉ cho thấy profile cá nhân trùng tên. TikTok chưa xác minh creator account. Website công khai chỉ có Zalo contact `0932773999`, chưa có OA ID.
+- Firestore đã lưu một `connectorTests` record mới cho mỗi platform và merge snapshot vào `connectors/{platform}`. Cả 5 giữ `not_tested / manual`; UI Kết nối đọc trực tiếp các snapshot này và không cần deploy.
+
+### Capability theo tài liệu — chưa phải PASS
+
+- YouTube: `videos.insert` hỗ trợ upload và metadata; project API chưa audit có upload bị giới hạn private. Analytics cần OAuth, gồm `yt-analytics.readonly` và hiện còn yêu cầu `youtube.readonly` cho query.
+- Facebook: Page post/text/link/photo/video được Pages API hỗ trợ; cần Page token và các quyền thực cấp như `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `publish_video`. Page Insights cần `read_insights`, `pages_read_engagement` và task `ANALYZE`; nhiều permission/Advanced Access cần App Review và Business Verification.
+- LinkedIn: Posts API hỗ trợ text, image, video và article; Organization publishing/reading cần `w_organization_social`/`r_organization_social` cùng Page role. Community Management là vetted product; Development tier mặc định 500 calls/app/24h và 100 calls/member/app/24h.
+- TikTok: Direct Post dùng `video.publish`; Upload-to-inbox dùng `video.upload`; init tối đa 6 requests/phút/user token. Unaudited client bị private/SELF_ONLY và active-user/posting caps. Display API có `user.info.*`/`video.list` và public-video metrics, không mặc định bằng marketing analytics đầy đủ.
+- Zalo: OA OpenAPI yêu cầu Zalo OA + Zalo App được cấp quyền; tài liệu Nội dung hỗ trợ tạo/xuất bản/cập nhật/quản lý bài viết và video. Zalo có thể yêu cầu gói OA/tính năng trả phí; analytics và hạn mức thực tế chưa xác minh.
