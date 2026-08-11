@@ -63,6 +63,8 @@ CAPTCHA, 2FA, account mismatch, locator không chắc chắn, UI thay đổi, ti
 - Một lần click Generate cho Scene TEST số 1: PASS về idempotency (`generateIntentAt` chỉ có một timestamp).
 - Flow ban đầu để mặc định `x2`, nên lần smoke đầu sinh hai biến thể dù chỉ click một lần. Worker đã được sửa bắt buộc `x1`; không chạy thêm Generate để tránh chi phí.
 - Một biến thể được tải bằng authenticated media fallback, upload Firebase Storage và gắn đúng Scene: PASS, 2,190,565 bytes, một `mediaAssets` record.
-- Theo tiêu chí nghiêm ngặt “một video duy nhất”, smoke này được ghi **PARTIAL**; cần một smoke được phê duyệt riêng trong tương lai để tái xác nhận `x1` bằng output thật.
+- Smoke strict `x1` được phê duyệt riêng dùng Scene TEST số 2, cùng `account-01` và cùng Flow Project: pre-flight xác nhận `Video` + `x1`; số output hiển thị tăng đúng từ 2 lên 3 sau một lần Generate.
+- Strict smoke tải đúng một MP4 2,082,821 bytes, tạo đúng một Storage object và một `mediaAssets` record `MfMnUMQtyF5QcZ50o0hh`; Scene và Job đều `succeeded`, attempt 1, không duplicate và thư mục download tạm rỗng sau upload.
+- Trạng thái hiện tại: **EXPERIMENTAL / AVAILABLE**. Kết quả này xác nhận V1 trong cấu hình đã test, không phải cam kết production; Manual Fallback vẫn bắt buộc được duy trì.
 
 Tham chiếu: [Google Flow Help](https://support.google.com/flow/answer/16353334), [Playwright connectOverCDP](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-over-cdp), [Playwright downloads](https://playwright.dev/docs/api/class-download).

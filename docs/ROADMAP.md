@@ -20,7 +20,7 @@ Core production/UAT đã PASS. GA4, Search Console và WordPress giữ safe mode
 
 Foundation local một job/một profile/một account tại một thời điểm. Chỉ đánh dấu PASS sau preflight UI thật và đúng một Scene smoke test; Flow Worker vẫn experimental, có manual fallback và không được trở thành dependency của Core.
 
-Kết quả 2026-08-11: pre-flight/session/project/locator/CDP PASS; một Scene được tạo, một MP4 đã vào Storage và gắn đúng Scene. Smoke giữ trạng thái PARTIAL vì Flow ban đầu mặc định `x2` tạo hai biến thể từ một click. Worker hiện bắt buộc `x1`; không thực hiện thêm Generate trong cùng giai đoạn chỉ để đổi nhãn PASS.
+Kết quả 2026-08-11: smoke đầu phát hiện cấu hình mặc định `x2`; sau khi Worker bắt buộc `x1`, strict smoke được phê duyệt riêng đã PASS với đúng một lần Generate, output tăng đúng một, một MP4/Storage object/`mediaAssets`, Scene và Job `succeeded`, không duplicate và file tạm đã cleanup. Trạng thái Flow Worker V1 là **EXPERIMENTAL / AVAILABLE**; Manual Fallback vẫn được giữ và Core không phụ thuộc Flow.
 
 ## Giai đoạn 3 — Distribution Connector production
 
