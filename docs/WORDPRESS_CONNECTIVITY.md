@@ -16,12 +16,15 @@ Không gửi POST, PUT, PATCH hoặc DELETE. Không tạo/update/trash bài, kh�
 - Application Password authentication được REST discovery quảng bá: PASS.
 - Anonymous `/users/me`: HTTP 401 đúng dự kiến.
 - `wordpress-username`: version enabled, giá trị `editor01`.
-- `wordpress-application-password`: chưa có version enabled.
-- Authenticated `/users/me`: NOT TESTED.
-- Read access: chỉ public discovery PASS; authenticated read NOT TESTED.
+- `wordpress-application-password`: version enabled và mount qua Secret Manager.
+- Authenticated `/users/me?context=edit`: PASS, HTTP 200 từ Cloud Run revision `ancv-marketing-backend-00021-zkt`.
+- Authenticated user: `editor01`; API trả role `administrator`, khác với role `Editor` được cung cấp ban đầu. Không thay đổi role trong connectivity check.
+- Read access: PASS.
 - Write access: NOT TESTED.
 - Media: NOT TESTED.
 - Publishing: NOT TESTED.
 - Connector mode: `semi_automatic` với Manual Fallback.
 
 Backend feasibility runner cưỡng chế `method: GET`, chỉ gửi Basic Authorization tới đúng origin WordPress và không forward credential sang origin khác khi redirect. Unit test kiểm tra toàn bộ request của connectivity flow đều là GET.
+
+Kết quả production đã lưu vào `connectors/website` và `connectorTests`, với `testedBy` là `ancv-automation@ancv-marketing-ai-agent.iam.gserviceaccount.com`. Credential không được lưu cùng evidence.

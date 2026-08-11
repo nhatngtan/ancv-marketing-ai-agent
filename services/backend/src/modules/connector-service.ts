@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { connectorModeVi, connectorStatusVi } from '@ancv/shared';
 import { z } from 'zod';
 import { listPublishingProviders } from '../connectors/registry.js';
-import { requireFirebaseEditor } from '../middleware/auth.js';
+import { requireAutomationIdentity, requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
 import { testGA4, testSearchConsole, type FeasibilityResult } from '../services/google-feasibility.js';
 import { testWebsite } from '../services/website-feasibility.js';
@@ -58,6 +58,18 @@ connectorRouter.post('/test', requireFirebaseEditor, async (request, response, n
     if (input.platform === 'ga4') result = await testGA4();
     else if (input.platform === 'search_console') result = await testSearchConsole();
     else result = await testWebsite(input.url, config.wordpressUsername && config.wordpressApplicationPassword ? {
+      username: config.wordpressUsername,
+      applicationPassword: config.wordpressApplicationPassword,
+    } : undefined);
+    await persistResult(result, testedBy);
+    response.json(result);
+  } catch (error) { next(error); }
+});
+
+connectorRouter.post('/test/website-readonly', requireAutomationIdentity, async (_request, response, next) => {
+  try {
+    const testedBy = response.locals.identity?.email ?? 'automation';
+    const result = await testWebsite(config.wordpressBaseUrl, config.wordpressUsername && config.wordpressApplicationPassword ? {
       username: config.wordpressUsername,
       applicationPassword: config.wordpressApplicationPassword,
     } : undefined);

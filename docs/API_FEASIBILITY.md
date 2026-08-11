@@ -10,7 +10,7 @@ Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành
 | TikTok | Chưa test OAuth | Chưa test Direct Post/upload | Chưa test analytics | Chưa test audit | Thủ công | Cần app ANCV và test scope thực cấp |
 | LinkedIn | Chưa test OAuth | Chưa test Posts API | Chưa test analytics | Chưa test Community Management review | Thủ công | Cần organization role và app program access |
 | Zalo | Chưa test OA token | Chưa test OA API | Chưa test OA analytics | Chưa test OA/app conditions | Thủ công | Cần app/OA đúng owner và token lifecycle |
-| Website | REST discovery PASS; authenticated `/users/me` chưa test | NOT TESTED | Chưa test | N/A | Bán tự động | Website đang xây dựng; connectivity check chỉ dùng GET read-only |
+| Website | Application Password + authenticated `/users/me` PASS | NOT TESTED | Chưa test | N/A | Bán tự động | Website đang xây dựng; connectivity check chỉ dùng GET read-only |
 | GA4 | Runtime Service Account list PASS | N/A | Chưa PASS `runReport` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development cũng không thấy property ANCV |
 | Search Console | Runtime Service Account list PASS | N/A | Chưa PASS `searchAnalytics.query` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development không có `anninhcanhve.com` |
 
@@ -27,8 +27,10 @@ Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành
 
 - GA4: request `accountSummaries.list` thật bằng runtime Service Account PASS, `accessiblePropertyCount = 0`. Kiểm tra read-only trên UI với `nhat.ngtan@gmail.com` chỉ thấy các account cũ (HocVeAI, HocVeAI-App, Hoho, Nhat Nguyen, Tho Tai Gioi, TruyenDai.VN), không thấy ANCV/An Ninh Cảnh Vệ. Không sử dụng các property này.
 - Search Console: request `sites.list` thật bằng runtime Service Account PASS, `accessibleSiteCount = 0`. UI xác nhận account `nhat.ngtan@gmail.com` chỉ có `sc-domain:hocveai.com` và `sc-domain:truyendai.vn`, không có `anninhcanhve.com`.
-- Website: `GET https://anninhcanhve.com/wp-json/` trả HTTP 200, namespace `wp/v2` và Application Password discovery PASS. Anonymous `GET /wp-json/wp/v2/users/me` trả 401 đúng dự kiến. Không gửi request POST/PUT/PATCH/DELETE.
-- Secret `wordpress-username` có version enabled với user kỹ thuật `editor01`; `wordpress-application-password` chưa có version. Authenticated GET `/users/me` chưa thể chạy và production chưa mount bộ credential chưa đầy đủ.
+- Website: `GET https://anninhcanhve.com/wp-json/` trả HTTP 200, namespace `wp/v2` và Application Password discovery PASS. Authenticated `GET /wp-json/wp/v2/users/me?context=edit` từ Cloud Run revision `ancv-marketing-backend-00021-zkt` trả HTTP 200 cho `editor01`.
+- Hai secret đều có version enabled và được mount vào Cloud Run bằng `ancv-cloud-run@ancv-marketing-ai-agent.iam.gserviceaccount.com`; không ghi credential vào source/log/Firestore.
+- WordPress API trả role thực tế `administrator` cho `editor01`, khác với role `Editor` được cung cấp ban đầu. Không thay đổi role; phải rà lại trong WordPress Admin trước khi cho phép write trong tương lai.
+- Không gửi request POST/PUT/PATCH/DELETE tới WordPress. Write access, media upload và publishing đều NOT TESTED.
 - Kết quả được lưu trong Firestore `connectorTests`; snapshot mới nhất được merge vào `connectors/{platform}`.
 
 ## Authentication production đề xuất
@@ -54,7 +56,7 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 
 ## Recheck Phase 2C — 2026-08-11
 
-- WordPress connectivity-only: REST root PASS; `wordpress-username` enabled, `wordpress-application-password` chưa có version. Authenticated GET `/users/me` NOT TESTED; write/media/publishing đều NOT TESTED. Giữ `partially_available / semi_automatic` và Manual Fallback.
+- WordPress connectivity-only: REST root, Application Password authentication và authenticated GET `/users/me` PASS từ production Cloud Run. Write/media/publishing đều NOT TESTED. Giữ `partially_available / semi_automatic` và Manual Fallback.
 - GA4: `accountSummaries.list` bằng production Service Account PASS, `accessiblePropertyCount = 0`; `runReport` chưa được phép chạy và connector giữ manual/no-data.
 - Search Console: `sites.list` bằng production Service Account PASS, `accessibleSiteCount = 0`; `searchAnalytics.query` chưa được phép chạy và connector giữ manual/no-data.
 - Website HTML công khai không được dùng làm bằng chứng cho quyền GA4 Data API hoặc Search Console API.

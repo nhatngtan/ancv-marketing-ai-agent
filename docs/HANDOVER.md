@@ -33,7 +33,8 @@ Application không hard-code email cá nhân để quyết định role. Quyền
 - [ ] Kiểm tra Zalo App/OA owner và token lifecycle.
 - [ ] Chọn/tạo GA4 property ANCV, cấp Viewer cho production Service Account, cấu hình numeric property ID và chạy `runReport`.
 - [ ] Verify `sc-domain:anninhcanhve.com`, cấp quyền cho production Service Account, cấu hình site URL và chạy `searchAnalytics.query`.
-- [ ] Tạo WordPress Application Password cho user kỹ thuật `editor01`; thêm version vào `wordpress-application-password` và chạy authenticated GET `/users/me`.
+- [x] Tạo WordPress Application Password cho user kỹ thuật `editor01`; thêm version vào Secret Manager và authenticated GET `/users/me` đã PASS.
+- [ ] Rà lại role của `editor01`: WordPress REST API đang trả `administrator`, khác với role `Editor` được cung cấp ban đầu; hạ quyền trong WordPress Admin nếu đây không phải chủ ý.
 - [ ] Chỉ khi Website sẵn sàng và có phê duyệt scope mới: lập kế hoạch riêng để test draft/media/write; không suy ra quyền publishing từ connectivity PASS.
 - [ ] Kiểm tra Website CMS owner, domain/DNS, hosting và khả năng chuyển credential sang Corporate Admin.
 - [ ] Kiểm tra Google Flow subscription/session; Flow vẫn là experimental và không phải dependency.

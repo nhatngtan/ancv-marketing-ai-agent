@@ -21,4 +21,9 @@ describe('health endpoints', () => {
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ error: 'AUTOMATION_AUTH_REQUIRED' });
   });
+  it('protects the WordPress read-only connectivity test with automation identity', async () => {
+    const response = await request(createApp()).post('/connectors/test/website-readonly');
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ error: 'AUTOMATION_AUTH_REQUIRED' });
+  });
 });
