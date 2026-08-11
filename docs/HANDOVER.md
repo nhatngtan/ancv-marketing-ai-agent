@@ -38,6 +38,8 @@ Application không hard-code email cá nhân để quyết định role. Quyền
 - [ ] Chỉ khi Website sẵn sàng và có phê duyệt scope mới: lập kế hoạch riêng để test draft/media/write; không suy ra quyền publishing từ connectivity PASS.
 - [ ] Kiểm tra Website CMS owner, domain/DNS, hosting và khả năng chuyển credential sang Corporate Admin.
 - [ ] Kiểm tra Google Flow subscription/session; Flow vẫn là experimental và không phải dependency.
+- [ ] Tạo lại từng persistent Flow profile trên máy bàn giao; không copy cookie/session từ máy development và không lưu profile vào Cloud/Git.
+- [ ] Profile local `account-01` hiện ánh xạ tới tài khoản Flow development đã quan sát là `nhat.nt142@gmail.com`; xác nhận lại subscription/ownership trước bàn giao và thay mapping trong Firestore nếu đổi account.
 - [ ] Rotate/revoke credential development chỉ sau khi production credential đã test PASS.
 - [ ] Rà `systemSettings/companyProfile`, chỉ giữ dữ kiện Công ty đã được phê duyệt để AI sử dụng.
 - [ ] Xác nhận retention/quota cho `aiUsage`, `aiJobs`, `auditLogs` và Cloud Storage media.

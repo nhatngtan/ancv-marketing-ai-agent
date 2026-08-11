@@ -45,3 +45,5 @@ Backend dùng Firestore transaction trên `systemCounters/{type}-{year}` để s
 AI endpoints yêu cầu Firebase `admin/editor`. Structured output được OpenAI ràng buộc JSON Schema và backend tiếp tục validate bằng Zod trước khi ghi production collections. Image bytes được upload vào Storage ngay; ứng dụng không phụ thuộc URL tạm của provider.
 
 `MASTER SCRIPT external → AI processing → Human edit/review → Human approval → Ready for distribution`. Không endpoint Giai đoạn 2B nào tự publish social/WordPress.
+
+Flow Worker V1 là process local experimental: Web App tạo `flowJobs` trong Firestore, Worker polling tuần tự, dùng Chrome thật với profile riêng theo `flowAccountId`, rồi Playwright chỉ attach qua CDP localhost sau khi người dùng đã đăng nhập thủ công. Worker generate tối đa một lần, upload Video Raw vào Storage và ghi `mediaAssets`. Profile/session chỉ nằm local ngoài Git/Cloud. Worker failure luôn degrade về Copy Prompt + upload thủ công.

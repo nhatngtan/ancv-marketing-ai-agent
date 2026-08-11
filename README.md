@@ -68,3 +68,5 @@ docs                     Feasibility, limitations, fallback, roadmap
 Luồng sử dụng chi tiết: [docs/AI_CONTENT_PIPELINE.md](docs/AI_CONTENT_PIPELINE.md). Theo dõi usage: [docs/OPENAI_USAGE.md](docs/OPENAI_USAGE.md).
 
 UAT production gần nhất: [docs/UAT_PHASE_2C.md](docs/UAT_PHASE_2C.md).
+
+Google Flow Worker Experimental V1, cách đăng nhập Chrome thật và kết quả smoke: [docs/FLOW_WORKER.md](docs/FLOW_WORKER.md).

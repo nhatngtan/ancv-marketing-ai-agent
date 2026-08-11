@@ -18,7 +18,9 @@ Core production/UAT đã PASS. GA4, Search Console và WordPress giữ safe mode
 
 ## Giai đoạn 2D — Google Flow Worker Experimental V1
 
-Chờ đặc tả triển khai đầy đủ được đưa vào repository/task. Flow Worker vẫn experimental, có manual fallback và không được trở thành dependency của Core.
+Foundation local một job/một profile/một account tại một thời điểm. Chỉ đánh dấu PASS sau preflight UI thật và đúng một Scene smoke test; Flow Worker vẫn experimental, có manual fallback và không được trở thành dependency của Core.
+
+Kết quả 2026-08-11: pre-flight/session/project/locator/CDP PASS; một Scene được tạo, một MP4 đã vào Storage và gắn đúng Scene. Smoke giữ trạng thái PARTIAL vì Flow ban đầu mặc định `x2` tạo hai biến thể từ một click. Worker hiện bắt buộc `x1`; không thực hiện thêm Generate trong cùng giai đoạn chỉ để đổi nhãn PASS.
 
 ## Giai đoạn 3 — Distribution Connector production
 

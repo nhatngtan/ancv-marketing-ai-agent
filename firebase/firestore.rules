@@ -20,7 +20,8 @@ service cloud.firestore {
       allow read: if signedIn() && collectionName in [
         'contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'connectors',
         'connectorTests', 'socialMetrics', 'websiteMetrics', 'seoMetrics', 'reports',
-        'workflowRuns', 'systemAlerts', 'systemSettings', 'aiJobs', 'aiUsage', 'auditLogs'
+        'workflowRuns', 'systemAlerts', 'systemSettings', 'aiJobs', 'aiUsage', 'auditLogs',
+        'flowAccounts', 'flowJobs'
       ];
       allow create: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && validAuditOnCreate();
       allow update: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && preservesOwnership();

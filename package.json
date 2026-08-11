@@ -2,14 +2,17 @@
   "name": "ancv-marketing-ai-agent",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*", "services/*", "packages/*"],
+  "workspaces": ["apps/*", "services/*", "packages/*", "tools/*"],
   "scripts": {
     "dev": "npm run dev -w @ancv/web",
     "dev:backend": "npm run dev -w @ancv/backend",
-    "build": "npm run build -w @ancv/shared && npm run build -w @ancv/backend && npm run build -w @ancv/web",
-    "lint": "npm run lint -w @ancv/shared && npm run lint -w @ancv/backend && npm run lint -w @ancv/web",
-    "typecheck": "npm run typecheck -w @ancv/shared && npm run typecheck -w @ancv/backend && npm run typecheck -w @ancv/web",
-    "test": "npm run build -w @ancv/shared && npm run test -w @ancv/backend && npm run test -w @ancv/web",
+    "build": "npm run build -w @ancv/shared && npm run build -w @ancv/backend && npm run build -w @ancv/web && npm run build -w @ancv/flow-worker",
+    "lint": "npm run lint -w @ancv/shared && npm run lint -w @ancv/backend && npm run lint -w @ancv/web && npm run lint -w @ancv/flow-worker",
+    "typecheck": "npm run typecheck -w @ancv/shared && npm run typecheck -w @ancv/backend && npm run typecheck -w @ancv/web && npm run typecheck -w @ancv/flow-worker",
+    "test": "npm run build -w @ancv/shared && npm run test -w @ancv/backend && npm run test -w @ancv/web && npm run test -w @ancv/flow-worker",
+    "flow:login": "npm run login -w @ancv/flow-worker --",
+    "flow:preflight": "npm run preflight -w @ancv/flow-worker --",
+    "flow:worker": "npm run start -w @ancv/flow-worker --",
     "verify": "npm run build -w @ancv/shared && npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "engines": { "node": ">=22" }

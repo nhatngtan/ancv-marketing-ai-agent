@@ -23,6 +23,8 @@ export const CONTENT_STATUSES = [
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 export type PublishingStatus = 'pending' | 'processing' | 'published' | 'needs_action' | 'manual_pending' | 'failed' | 'skipped';
 export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
+export type FlowAccountStatus = 'ready' | 'needs_login' | 'needs_verification' | 'unavailable';
+export type FlowJobStatus = 'queued' | 'processing' | 'succeeded' | 'needs_manual';
 export type AIOperation = 'scene_breakdown' | 'scene_regeneration' | 'flow_prompt' | 'video_social_copy' | 'article_generation' | 'article_platform_copy' | 'image_generation' | 'report_analysis';
 
 export interface AuditFields {
@@ -85,6 +87,7 @@ export interface ContentRecord extends AuditFields {
   finalVideoAssetId?: string;
   approvedAt?: string;
   approvedBy?: string;
+  flowProjectUrl?: string;
 }
 
 export interface PlatformCopy {
@@ -132,6 +135,9 @@ export interface SceneRecord extends AuditFields {
   continuityNotes: string;
   generationPrompt: string;
   status: 'draft' | 'approved' | 'used';
+  flowJobId?: string;
+  flowStatus?: FlowJobStatus;
+  lastFlowAssetId?: string;
 }
 
 export interface MediaAssetRecord extends AuditFields {
@@ -150,6 +156,35 @@ export interface MediaAssetRecord extends AuditFields {
   model?: string;
   quality?: string;
   usage?: AIUsageTokens;
+  source?: 'manual_upload' | 'google_flow_worker' | 'openai';
+  flowAccountId?: string;
+  flowJobId?: string;
+}
+
+export interface FlowAccountRecord extends AuditFields {
+  status: FlowAccountStatus;
+  label: string;
+  email?: string;
+  projectUrl?: string;
+  lastCheckedAt?: string;
+  limitation?: string;
+}
+
+export interface FlowJobRecord extends AuditFields {
+  status: FlowJobStatus;
+  contentDocId: string;
+  contentId: string;
+  sceneId: string;
+  sceneNumber: number;
+  prompt: string;
+  flowAccountId: string;
+  flowProjectUrl: string;
+  attempt: number;
+  error?: string | null;
+  startedAt?: string;
+  completedAt?: string;
+  generateIntentAt?: string;
+  assetId?: string;
 }
 
 export interface AIUsageTokens {
