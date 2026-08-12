@@ -139,7 +139,7 @@ function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: Con
         <div className="content-list">{contents.slice(0,4).map((item) => <div className="content-row" key={item.id}><div className={`type-icon ${item.type}`} >{item.type === 'video' ? <Video/> : <FileText/>}</div><div className="grow"><strong>{item.title}</strong><span>{item.contentId}</span></div><Badge tone={item.status === 'partially_published' ? 'warning' : item.status === 'published' ? 'success' : 'info'}>{item.status === 'partially_published' ? 'Đã đăng một phần' : item.status === 'review' ? 'Chờ duyệt' : item.status}</Badge></div>)}</div>
       </section>
       <section className="panel"><div className="panel-head"><div><span className="eyebrow">CONNECTOR LAYER</span><h2>Tình trạng kết nối</h2></div><button className="text-button" onClick={() => onNavigate('connectors')}>Quản lý <ChevronRight size={16}/></button></div>
-        <div className="connector-mini">{connectors.slice(0,6).map((item) => <div key={item.id}><span className={`platform-dot ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><strong>{platformLabels[item.platform]}</strong><small>{connectorStatusVi[item.authenticationStatus]}</small></div><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></div>)}</div>
+        <div className="connector-mini">{connectors.slice(0,6).map((item) => <div key={item.id}><span className={`platform-dot ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><strong>{platformLabels[item.platform]}</strong><small>{connectorStatusVi[item.status]}</small></div><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></div>)}</div>
       </section>
     </div>
   </>;

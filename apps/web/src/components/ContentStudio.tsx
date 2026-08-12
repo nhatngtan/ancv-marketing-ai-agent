@@ -185,6 +185,7 @@ export function ContentStudioPage({
       </section>
       {selected && (
         <StudioDrawer
+          key={selected.id}
           content={selected}
           localAgents={localAgents}
           onClose={() => setSelectedId(null)}
@@ -1351,10 +1352,23 @@ function CopyEditor({
   const [drafts, setDrafts] = useState<Partial<Record<Platform, PlatformCopy>>>(
     content.platformCopies ?? {},
   );
-  useEffect(
-    () => setDrafts(content.platformCopies ?? {}),
-    [content.platformCopies, content.id],
-  );
+  const serverCopies = useRef(content.platformCopies ?? {});
+  useEffect(() => {
+    const previousServerCopies = serverCopies.current;
+    const nextServerCopies = content.platformCopies ?? {};
+    setDrafts((currentDrafts) => {
+      const merged = { ...nextServerCopies };
+      for (const platform of Object.keys(currentDrafts) as Platform[]) {
+        const current = currentDrafts[platform];
+        const previousServer = previousServerCopies[platform];
+        const hasUnsavedChanges =
+          JSON.stringify(current) !== JSON.stringify(previousServer);
+        if (hasUnsavedChanges && current) merged[platform] = current;
+      }
+      return merged;
+    });
+    serverCopies.current = nextServerCopies;
+  }, [content.platformCopies, content.id]);
   return (
     <>
       {platforms.map((platform) => {
@@ -1442,7 +1456,13 @@ function CopyEditor({
                   copy &&
                   act(
                     `save-copy-${platform}`,
-                    () => savePlatformCopy(content.id, platform, copy),
+                    async () => {
+                      await savePlatformCopy(content.id, platform, copy);
+                      serverCopies.current = {
+                        ...serverCopies.current,
+                        [platform]: copy,
+                      };
+                    },
                     "Đã lưu bản chỉnh sửa.",
                   )
                 }

@@ -2,6 +2,8 @@
 
 Tài liệu này là checklist chuẩn bị bàn giao, không thực hiện chuyển ownership ở giai đoạn hiện tại.
 
+Launch readiness và bằng chứng Final UAT được chốt tại [UAT_PHASE_3.md](UAT_PHASE_3.md). Quy trình vận hành hằng ngày nằm ở mục **START HẰNG NGÀY** trong [README.md](../README.md).
+
 ## Hiện tại
 
 - Development / Operating Account: `nhat.ngtan@gmail.com`
