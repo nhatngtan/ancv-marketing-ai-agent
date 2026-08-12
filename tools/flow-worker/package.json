@@ -13,7 +13,9 @@
     "start": "tsx src/index.ts worker",
     "local-agent": "tsx src/index.ts local-agent",
     "local-preflight": "tsx src/index.ts local-preflight",
-    "local-configure": "tsx src/index.ts local-configure"
+    "local-configure": "tsx src/index.ts local-configure",
+    "local-diagnose": "tsx src/index.ts local-diagnose",
+    "diagnose-existing": "tsx src/index.ts existing-generation-diagnose"
   },
   "dependencies": {
     "@ancv/shared": "workspace:*",

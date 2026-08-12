@@ -5,7 +5,7 @@ import type { FlowAccountRecord, FlowJobRecord } from '@ancv/shared';
 import { connectAccountContext } from './browser.js';
 import { ensureLocalDirectories, flowConfig, pathInsideDataRoot } from './config.js';
 import { firestore, storageBucket } from './firebase.js';
-import { countVisibleVideoPreviews, detectGoogleAccountEmail, findDownloadControl, inspectFlowUi, openExistingFlowProject, openLatestVideoDetail, waitForFlowUi } from './flow-ui.js';
+import { detectGoogleAccountEmail, findDownloadControl, findNewFlowOutputIds, getFlowOutputIds, getStableFlowOutputIds, inspectFlowUi, openExistingFlowProject, openFlowOutputById, waitForFlowUi } from './flow-ui.js';
 import { persistLocalVideo } from './local-storage.js';
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -94,30 +94,36 @@ async function processJob(job: FlowJobRecord): Promise<void> {
     let downloadControl = null;
     if (job.generateIntentAt) {
       console.log(JSON.stringify({ event: 'flow_download_recovery', jobId: job.id, generateIntentAt: job.generateIntentAt }));
+      const baselineIds = new Set(job.baselineOutputIds ?? []);
+      if (!baselineIds.size) { await failJob(job, 'Recovery thiếu baseline output IDs; không chọn output cũ và không Generate lại.'); return; }
       const recoveryDeadline = Date.now() + 60_000;
       let lastProbe = '';
       while (Date.now() < recoveryDeadline && !downloadControl) {
-        const previewCount = await countVisibleVideoPreviews(page);
-        const detailOpened = page.url().includes('/edit/')
-          || (previewCount > 0 && await openLatestVideoDetail(page));
+        const outputIds = await getFlowOutputIds(page);
+        const newIds = findNewFlowOutputIds([...baselineIds], outputIds);
+        if (newIds.length > 1) throw new Error(`FLOW_RECOVERY_OUTPUT_AMBIGUOUS:${newIds.length}`);
+        const detailOpened = newIds.length === 1 && await openFlowOutputById(page, newIds[0]!);
         if (detailOpened) downloadControl = await findDownloadControl(page);
-        const probe = `${previewCount}:${detailOpened}:${page.url().includes('/edit/')}:${downloadControl?.key ?? ''}`;
+        const probe = `${outputIds.length}:${newIds.length}:${detailOpened}:${downloadControl?.key ?? ''}`;
         if (probe !== lastProbe) {
-          console.log(JSON.stringify({ event: 'flow_recovery_probe', jobId: job.id, previewCount, detailOpened, inMediaDetail: page.url().includes('/edit/'), downloadControl: downloadControl?.key ?? null }));
+          console.log(JSON.stringify({ event: 'flow_recovery_probe', jobId: job.id, outputCount: outputIds.length, newOutputCount: newIds.length, detailOpened, downloadControl: downloadControl?.key ?? null }));
           lastProbe = probe;
         }
         if (!downloadControl) await page.waitForTimeout(2_000);
       }
     } else {
       await ui.prompt!.locator.fill(job.prompt);
-      const baselineVideoCount = await countVisibleVideoPreviews(page);
+      const baselineOutputIds = await getStableFlowOutputIds(page);
       const intentAt = new Date().toISOString();
-      await firestore.collection('flowJobs').doc(job.id).update({ generateIntentAt: intentAt, updatedAt: intentAt });
+      await firestore.collection('flowJobs').doc(job.id).update({ generateIntentAt: intentAt, baselineOutputIds, updatedAt: intentAt });
       await ui.generate!.locator.click();
       const deadline = Date.now() + flowConfig.generationTimeoutMs;
       while (Date.now() < deadline && !downloadControl) {
         await page.waitForTimeout(5_000);
-        if (await countVisibleVideoPreviews(page) > baselineVideoCount && await openLatestVideoDetail(page)) downloadControl = await findDownloadControl(page);
+        const outputIds = await getFlowOutputIds(page);
+        const newIds = findNewFlowOutputIds(baselineOutputIds, outputIds);
+        if (newIds.length > 1) throw new Error(`FLOW_OUTPUT_AMBIGUOUS:${newIds.length}`);
+        if (newIds.length === 1 && await openFlowOutputById(page, newIds[0]!)) downloadControl = await findDownloadControl(page);
       }
     }
     if (!downloadControl) { await failJob(job, 'Không xác định được output/download trong timeout; không Generate lại.'); return; }

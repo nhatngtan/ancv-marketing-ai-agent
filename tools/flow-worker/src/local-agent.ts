@@ -15,6 +15,7 @@ import {
 import { BridgeServer } from "./bridge-server.js";
 import { ChromeProfileManager } from "./profile-manager.js";
 import { persistLocalVideo } from "./local-storage.js";
+import { findNewFlowOutputIds } from "./flow-ui.js";
 
 interface FlowInspection {
   url: string;
@@ -24,12 +25,22 @@ interface FlowInspection {
   generate?: boolean;
   x1?: boolean;
   outputCount?: number;
+  outputIds?: string[];
+  detailId?: string | null;
+  view?: 'project' | 'detail';
+  processing?: boolean;
+  generationError?: boolean;
+  emptyState?: boolean;
   email?: string | null;
   limitation?: string | null;
 }
 
 const sleep = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function outputSignature(inspection: FlowInspection): string {
+  return [...new Set(inspection.outputIds ?? [])].sort().join("|");
+}
 
 export class LocalAgent {
   private readonly config = loadLocalAgentConfig();
@@ -136,6 +147,81 @@ export class LocalAgent {
       }),
     );
     return inspection;
+  }
+
+  private async waitForStableOutputInspection(
+    accountId: string,
+    initial?: FlowInspection,
+  ): Promise<FlowInspection> {
+    const startedAt = Date.now();
+    const minimumObservationMs = 8_000;
+    const deadline = startedAt + 20_000;
+    let inspection =
+      initial ??
+      ((await this.bridge.sendCommand(
+        accountId,
+        "inspect_flow",
+        {},
+        30_000,
+      )) as FlowInspection);
+    let signature = outputSignature(inspection);
+    let stableSamples = 1;
+
+    while (Date.now() < deadline) {
+      await sleep(2_000);
+      const next = (await this.bridge.sendCommand(
+        accountId,
+        "inspect_flow",
+        {},
+        30_000,
+      )) as FlowInspection;
+      const nextSignature = outputSignature(next);
+      stableSamples = nextSignature === signature ? stableSamples + 1 : 1;
+      signature = nextSignature;
+      inspection = next;
+      if (
+        Date.now() - startedAt >= minimumObservationMs &&
+        stableSamples >= 3 &&
+        ((inspection.outputIds?.length ?? 0) > 0 || inspection.emptyState)
+      )
+        return inspection;
+    }
+
+    throw new Error("FLOW_OUTPUT_BASELINE_UNSTABLE");
+  }
+
+  async diagnose(accountId: string): Promise<unknown> {
+    const account = (
+      await firestore.collection("flowAccounts").doc(accountId).get()
+    ).data() as FlowAccountRecord | undefined;
+    if (!account?.projectUrl) throw new Error("FLOW_PROJECT_URL_REQUIRED");
+    await this.profiles.open(accountId, account.projectUrl);
+    await sleep(2_000);
+    const initial = (await this.bridge.sendCommand(
+      accountId,
+      "inspect_flow",
+      {},
+      30_000,
+    )) as FlowInspection;
+    const inspection =
+      initial.session === "ready"
+        ? await this.waitForStableOutputInspection(accountId, initial)
+        : initial;
+    const diagnostic = await this.bridge.sendCommand(
+      accountId,
+      "diagnose_flow",
+      {},
+      30_000,
+    );
+    console.log(
+      JSON.stringify({
+        event: "local_agent_flow_diagnostic",
+        accountId,
+        inspection,
+        diagnostic,
+      }),
+    );
+    return { inspection, diagnostic };
   }
 
   private async heartbeat(
@@ -286,12 +372,19 @@ export class LocalAgent {
         {},
         30_000,
       );
-      const inspection = (await this.bridge.sendCommand(
+      const initialInspection = (await this.bridge.sendCommand(
         job.flowAccountId,
         "inspect_flow",
         {},
         30_000,
       )) as FlowInspection;
+      const inspection =
+        initialInspection.session === "ready"
+          ? await this.waitForStableOutputInspection(
+              job.flowAccountId,
+              initialInspection,
+            )
+          : initialInspection;
       const expected = (
         mapping.expectedAccount ??
         account.email ??
@@ -340,7 +433,7 @@ export class LocalAgent {
         30_000,
       )) as { filled?: boolean };
       if (!filled.filled) throw new Error("FLOW_PROMPT_FILL_FAILED");
-      const baseline = Number(inspection.outputCount ?? 0);
+      const baselineIds = new Set(inspection.outputIds ?? []);
       const intentAt = new Date().toISOString();
       await firestore
         .collection("flowJobs")
@@ -348,6 +441,7 @@ export class LocalAgent {
         .update({
           generateIntentAt: intentAt,
           generateClicks: 0,
+          baselineOutputIds: [...baselineIds],
           updatedAt: intentAt,
         });
       const clicked = (await this.bridge.sendCommand(
@@ -368,6 +462,7 @@ export class LocalAgent {
 
       const deadline = Date.now() + 15 * 60_000;
       let output: FlowInspection | null = null;
+      let newOutputId: string | null = null;
       while (Date.now() < deadline) {
         await sleep(5_000);
         output = (await this.bridge.sendCommand(
@@ -376,18 +471,18 @@ export class LocalAgent {
           {},
           30_000,
         )) as FlowInspection;
-        if (Number(output.outputCount ?? 0) === baseline + 1) break;
-        if (Number(output.outputCount ?? 0) > baseline + 1)
-          throw new Error(
-            `FLOW_OUTPUT_COUNT_UNEXPECTED baseline=${baseline} actual=${output.outputCount}`,
-          );
+        const candidates = findNewFlowOutputIds([...baselineIds], output.outputIds ?? [], output.detailId);
+        if (candidates.length === 1) { newOutputId = candidates[0]!; break; }
+        if (candidates.length > 1) throw new Error(`FLOW_OUTPUT_AMBIGUOUS_NEW_IDS:${candidates.length}`);
+        if (output.generationError) throw new Error('FLOW_GENERATION_FAILED_NO_RETRY');
       }
-      if (!output || Number(output.outputCount ?? 0) !== baseline + 1)
-        throw new Error("FLOW_OUTPUT_TIMEOUT_NO_RETRY");
+      if (!output || !newOutputId)
+        throw new Error(output?.processing ? "FLOW_OUTPUT_STILL_PROCESSING_NO_RETRY" : "FLOW_OUTPUT_TIMEOUT_NO_RETRY");
+      await firestore.collection("flowJobs").doc(job.id).update({ flowDetailId: newOutputId, updatedAt: new Date().toISOString() });
       const opened = (await this.bridge.sendCommand(
         job.flowAccountId,
-        "open_latest_video",
-        {},
+        "open_output",
+        { outputId: newOutputId },
         30_000,
       )) as { opened?: boolean };
       if (!opened.opened) throw new Error("FLOW_OUTPUT_OPEN_FAILED");
@@ -499,6 +594,16 @@ export async function preflightLocalAgent(accountId: string): Promise<void> {
   try {
     await agent.startBridge();
     await agent.preflight(accountId);
+  } finally {
+    await agent.stop();
+  }
+}
+
+export async function diagnoseLocalAgent(accountId: string): Promise<void> {
+  const agent = new LocalAgent();
+  try {
+    await agent.startBridge();
+    await agent.diagnose(accountId);
   } finally {
     await agent.stop();
   }

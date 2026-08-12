@@ -16,6 +16,8 @@
     "local:agent": "npm run local-agent -w @ancv/flow-worker --",
     "local:preflight": "npm run local-preflight -w @ancv/flow-worker --",
     "local:configure": "npm run local-configure -w @ancv/flow-worker --",
+    "local:diagnose": "npm run local-diagnose -w @ancv/flow-worker --",
+    "flow:diagnose-existing": "npm run diagnose-existing -w @ancv/flow-worker --",
     "youtube:oauth": "node scripts/youtube-oauth-feasibility.mjs",
     "verify": "npm run build -w @ancv/shared && npm run lint && npm run typecheck && npm run test && npm run build"
   },

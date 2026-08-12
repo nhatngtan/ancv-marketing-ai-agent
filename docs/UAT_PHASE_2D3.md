@@ -31,3 +31,7 @@ Ngày kiểm thử: 2026-08-12. Kết quả tổng: **PARTIAL**. Không chạy l
 ## Kết luận
 
 Architecture, runtime, UI, heartbeat, profile/bridge, job ownership, local-first metadata và fail-safe đã hoạt động. Tiêu chí end-to-end ONE SCENE chưa hoàn tất, vì vậy không đánh dấu Phase PASS và không gọi Flow automation là production-guaranteed. Playwright fallback và manual Copy Prompt/download local vẫn giữ nguyên.
+
+## Diagnostic 2D.3A
+
+Generation hiện hữu đã được kiểm tra read-only, không Generate thêm. Project vẫn có đúng 3 output cũ bằng baseline, không có output mới để recovery; job/scene giữ `needs_manual`, không có asset hoặc Firebase upload. Detection đã chuyển từ visible thumbnail count sang stable output ID và fail-closed khi baseline chưa ổn định. Evidence chi tiết: [FLOW_OUTPUT_RECOVERY_2D3A.md](FLOW_OUTPUT_RECOVERY_2D3A.md).

@@ -83,11 +83,19 @@ function inspectFlowPage() {
     email = labels.map((label) => label.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0]?.toLowerCase() ?? null).find(Boolean) ?? null;
   }
   const previews = [...document.querySelectorAll('img[alt*="video" i]')].filter(visible);
+  const outputIds = [...new Set([...document.querySelectorAll('a[href*="/edit/"]')]
+    .map((element) => element.getAttribute('href')?.match(/\/edit\/([^/?#]+)/)?.[1] ?? null)
+    .filter(Boolean))];
+  const detailId = location.pathname.match(/\/edit\/([^/?#]+)/)?.[1] ?? null;
+  const emptyState = /no (?:videos|generations|outputs) yet|create your first (?:video|generation)/i.test(bodyText);
+  const processing = /generating|processing|rendering|đang tạo|đang xử lý/i.test(bodyText);
+  const generationError = /generation failed|failed to generate|generation error|tạo không thành công|tạo thất bại/i.test(bodyText);
   return {
     url,
     session: prompt && video && generate && x1 ? 'ready' : 'unavailable',
     prompt: Boolean(prompt), video: Boolean(video), generate: Boolean(generate), x1,
-    outputCount: previews.length, email,
+    outputCount: outputIds.length || previews.length, outputIds, detailId,
+    view: detailId ? 'detail' : 'project', processing, generationError, emptyState, email,
     limitation: prompt && video && generate && x1 ? null : 'Không xác định chắc chắn prompt/Video/Generate/x1.',
   };
 }
@@ -145,6 +153,17 @@ function openLatestVideo() {
   return { opened: true, count: previews.length };
 }
 
+function openOutput(outputId) {
+  if (!/^[a-z0-9-]{8,80}$/i.test(outputId)) return { opened: false, reason: 'OUTPUT_ID_INVALID' };
+  const current = location.pathname.match(/\/edit\/([^/?#]+)/)?.[1];
+  if (current === outputId) return { opened: true, outputId };
+  const link = [...document.querySelectorAll('a[href*="/edit/"]')]
+    .find((element) => element.getAttribute('href')?.includes(`/edit/${outputId}`));
+  if (!link) return { opened: false, reason: 'OUTPUT_LINK_NOT_FOUND' };
+  link.click();
+  return { opened: true, outputId };
+}
+
 function clickDownloadControl() {
   const visible = (element) => { const style = window.getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0; };
   const text = (element) => `${element.getAttribute('aria-label') ?? ''} ${element.textContent ?? ''}`.replace(/\s+/g, ' ').trim();
@@ -153,6 +172,66 @@ function clickDownloadControl() {
   if (controls.length !== 1) return { clicked: false, matches: controls.length };
   controls[0].click();
   return { clicked: true, matches: 1 };
+}
+
+function diagnoseFlowPage() {
+  const visible = (element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  };
+  const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  const pathname = (value) => {
+    if (!value) return null;
+    try { return new URL(value, location.href).pathname; } catch { return null; }
+  };
+  const evidence = (element) => {
+    const rect = element.getBoundingClientRect();
+    const link = element.closest('a[href]');
+    const button = element.closest('button,[role="button"]');
+    return {
+      tag: element.tagName.toLowerCase(), visible: visible(element),
+      alt: clean(element.getAttribute('alt')) || null,
+      ariaLabel: clean(element.getAttribute('aria-label')) || null,
+      text: clean(element.textContent) || null,
+      dataTestId: clean(element.getAttribute('data-testid')) || null,
+      hrefPath: pathname(link?.getAttribute('href')),
+      sourcePath: pathname(element.getAttribute('src')),
+      buttonLabel: clean(button?.getAttribute('aria-label') || button?.textContent) || null,
+      top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height),
+    };
+  };
+  const selectors = [
+    'img[alt*="video" i]', 'video', 'a[href*="/edit/"]',
+    '[data-testid*="video" i]', '[data-testid*="output" i]', '[data-testid*="generation" i]',
+  ];
+  const nodes = [...new Set(selectors.flatMap((selector) => [...document.querySelectorAll(selector)]))];
+  const statusPattern = /generat|processing|render|queued|failed|error|đang tạo|đang xử lý|thất bại|lỗi|hoàn tất|complete/i;
+  const statusTexts = [...document.querySelectorAll('[role="status"],[aria-live],button,p,span')]
+    .filter((element) => visible(element))
+    .map((element) => clean(element.getAttribute('aria-label') || element.textContent))
+    .filter((text) => text && text.length <= 240 && statusPattern.test(text));
+  const relevantTestIds = [...document.querySelectorAll('[data-testid]')]
+    .map((element) => element.getAttribute('data-testid'))
+    .filter((value) => value && /video|output|generat|media|asset/i.test(value));
+  return {
+    url: location.href,
+    title: document.title,
+    capturedAt: new Date().toISOString(),
+    documentState: document.readyState,
+    scroll: { y: Math.round(window.scrollY), height: document.documentElement.scrollHeight, viewport: window.innerHeight },
+    counts: {
+      visibleVideoAltImages: [...document.querySelectorAll('img[alt*="video" i]')].filter(visible).length,
+      totalVideoAltImages: document.querySelectorAll('img[alt*="video" i]').length,
+      visibleVideoElements: [...document.querySelectorAll('video')].filter(visible).length,
+      totalVideoElements: document.querySelectorAll('video').length,
+      editLinks: document.querySelectorAll('a[href*="/edit/"]').length,
+      diagnosticNodes: nodes.length,
+    },
+    statusTexts: [...new Set(statusTexts)].slice(0, 40),
+    relevantTestIds: [...new Set(relevantTestIds)].slice(0, 40),
+    outputs: nodes.slice(0, 40).map(evidence),
+  };
 }
 
 async function flowTab() {
@@ -176,10 +255,12 @@ async function execute(command) {
     return { opened: true };
   }
   if (command.type === 'inspect_flow') return runInFlow(inspectFlowPage);
+  if (command.type === 'diagnose_flow') return runInFlow(diagnoseFlowPage);
   if (command.type === 'prepare_flow') return runInFlow(prepareFlowPage);
   if (command.type === 'fill_prompt') return runInFlow(fillPrompt, [command.payload.prompt]);
   if (command.type === 'click_generate') return runInFlow(clickGenerate);
   if (command.type === 'open_latest_video') return runInFlow(openLatestVideo);
+  if (command.type === 'open_output') return runInFlow(openOutput, [command.payload.outputId]);
   if (command.type === 'download_latest') {
     const before = new Set((await chrome.downloads.search({ limit: 20 })).map((item) => item.id));
     const clicked = await runInFlow(clickDownloadControl);

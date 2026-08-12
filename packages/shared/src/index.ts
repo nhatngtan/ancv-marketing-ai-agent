@@ -187,6 +187,9 @@ export interface FlowJobRecord extends AuditFields {
   startedAt?: string;
   completedAt?: string;
   generateIntentAt?: string;
+  generateClicks?: number;
+  baselineOutputIds?: string[];
+  flowDetailId?: string;
   assetId?: string;
   executionMode?: 'local_agent' | 'playwright_fallback';
   storageStrategy?: 'local_first' | 'firebase';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlowJobRecord } from '@ancv/shared';
 import { localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
+import { findNewFlowOutputIds } from '../src/flow-ui.js';
 
 const config: LocalAgentConfig = {
   agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
@@ -16,5 +17,17 @@ describe('local-first paths', () => {
 
   it('rejects traversal outside the workspace', () => {
     expect(() => pathInsideWorkspace(config, '../secret.txt')).toThrow('LOCAL_PATH_INVALID');
+  });
+});
+
+describe('Flow output detection', () => {
+  it('uses stable output IDs instead of lazy thumbnail counts', () => {
+    expect(findNewFlowOutputIds(['a', 'b', 'c'], ['a', 'b', 'c'])).toEqual([]);
+    expect(findNewFlowOutputIds(['a', 'b', 'c'], ['a', 'b', 'c', 'd'])).toEqual(['d']);
+  });
+
+  it('detects a new detail navigation when grid links are virtualized', () => {
+    expect(findNewFlowOutputIds(['a', 'b', 'c'], [], 'd')).toEqual(['d']);
+    expect(findNewFlowOutputIds(['a', 'b', 'c'], [], 'b')).toEqual([]);
   });
 });

@@ -268,6 +268,47 @@ export async function countVisibleVideoPreviews(page: Page): Promise<number> {
   return (await visibleVideoPreviews(page)).length;
 }
 
+export async function getFlowOutputIds(page: Page): Promise<string[]> {
+  const hrefs = await page.locator('a[href*="/edit/"]').evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href));
+  return [...new Set(hrefs.map((href) => href.match(/\/edit\/([^/?#]+)/)?.[1]).filter((value): value is string => Boolean(value)))];
+}
+
+export async function getStableFlowOutputIds(page: Page): Promise<string[]> {
+  const startedAt = Date.now();
+  const deadline = startedAt + 20_000;
+  let previousSignature = '';
+  let stableSamples = 0;
+  while (Date.now() < deadline) {
+    const ids = await getFlowOutputIds(page);
+    const signature = [...ids].sort().join('|');
+    stableSamples = signature === previousSignature ? stableSamples + 1 : 1;
+    previousSignature = signature;
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    const explicitEmptyState = /no (?:videos|generations|outputs) yet|create your first (?:video|generation)/i.test(bodyText);
+    if (Date.now() - startedAt >= 8_000 && stableSamples >= 3 && (ids.length > 0 || explicitEmptyState)) return ids;
+    await page.waitForTimeout(2_000);
+  }
+  throw new Error('FLOW_OUTPUT_BASELINE_UNSTABLE');
+}
+
+export function findNewFlowOutputIds(baselineIds: string[], currentIds: string[], detailId?: string | null): string[] {
+  const baseline = new Set(baselineIds);
+  return [...new Set([
+    ...currentIds.filter((id) => !baseline.has(id)),
+    ...(detailId && !baseline.has(detailId) ? [detailId] : []),
+  ])];
+}
+
+export async function openFlowOutputById(page: Page, outputId: string): Promise<boolean> {
+  if (!/^[a-z0-9-]{8,80}$/i.test(outputId)) return false;
+  if (page.url().includes(`/edit/${outputId}`)) return true;
+  const link = page.locator(`a[href*="/edit/${outputId}"]`).first();
+  if (!await link.isVisible().catch(() => false)) return false;
+  await link.click({ timeout: 15_000 });
+  await page.waitForURL((url) => url.pathname.includes(`/edit/${outputId}`), { timeout: 30_000 });
+  return true;
+}
+
 export async function openLatestVideoDetail(page: Page): Promise<boolean> {
   if (/\/project\/[^/]+\/edit\//.test(page.url())) return true;
   const previews = await visibleVideoPreviews(page);
