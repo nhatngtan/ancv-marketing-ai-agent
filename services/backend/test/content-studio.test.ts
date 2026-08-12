@@ -31,6 +31,16 @@ describe('AI Content Studio cost and security controls', () => {
     expect(response.status).toBe(401);
     expect(response.body.error).toBe('AUTH_REQUIRED');
   });
+  it.each([
+    ['get', '/v1/flow/browser-profiles'],
+    ['post', '/v1/flow/browser-profiles/scan'],
+    ['put', '/v1/flow/browser-profiles/mappings'],
+    ['post', '/v1/flow/browser-profiles/test'],
+  ] as const)('protects Chrome profile Admin endpoint %s %s', async (method, path) => {
+    const response = await request(createApp())[method](path).send({});
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('AUTH_REQUIRED');
+  });
   it('accepts only official localized Google Flow project URLs', () => {
     expect(isOfficialFlowProjectUrl('https://labs.google/fx/vi/tools/flow/project/project-1')).toBe(true);
     expect(isOfficialFlowProjectUrl('https://labs.google/fx/tools/flow/project/project-1')).toBe(true);

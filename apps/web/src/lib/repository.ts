@@ -1,6 +1,6 @@
-import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type CompanyProfile, type ConnectorRecord, type ContentRecord, type ContentType, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type SceneRecord } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type ContentType, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type Role, type SceneRecord } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 const demoContents: ContentRecord[] = [{ id: 'demo-video', contentId: 'ANCV-VID-2026-001', type: 'video', title: 'Video mẫu ANCV', topic: 'An ninh doanh nghiệp', body: '', masterScript: 'MASTER SCRIPT được nhập từ bên ngoài hệ thống.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: 'demo-user', status: 'draft', platforms: ['youtube','facebook','tiktok','zalo','linkedin'].map((platform) => ({ platform: platform as Platform, mode: 'manual', status: 'manual_pending' })) }];
@@ -93,6 +93,28 @@ export async function uploadMedia(content: ContentRecord, file: File, kind: 'sce
 export async function selectAsset(contentDocId: string, assets: MediaAssetRecord[], selected: MediaAssetRecord) { if (!firestore) return; const batch = writeBatch(firestore); assets.filter((item) => item.kind === selected.kind && (selected.kind !== 'scene_take' || item.sceneId === selected.sceneId)).forEach((item) => batch.update(doc(firestore!, 'mediaAssets', item.id), { selected: item.id === selected.id, updatedAt: serverTimestamp() })); if (selected.kind === 'article_image') batch.update(doc(firestore, 'contents', contentDocId), { selectedImageId: selected.id, updatedAt: serverTimestamp() }); if (selected.kind === 'video_final') batch.update(doc(firestore, 'contents', contentDocId), { finalVideoAssetId: selected.id, status: 'awaiting_copy', updatedAt: serverTimestamp() }); await batch.commit(); await api(`/v1/content/${contentDocId}/audit`, { method: 'POST', body: JSON.stringify({ action: 'select_asset', detail: { assetId: selected.id, kind: selected.kind, sceneId: selected.sceneId ?? null } }) }); }
 export async function getCompanyProfile() { return api<CompanyProfile>('/v1/content/company-profile'); }
 export async function saveCompanyProfile(profile: CompanyProfile) { return api<CompanyProfile>('/v1/content/company-profile', { method: 'PUT', body: JSON.stringify(profile) }); }
+export async function getCurrentUserRole(): Promise<Role | null> {
+  if (!firestore || !auth?.currentUser) return null;
+  const snapshot = await getDoc(doc(firestore, 'users', auth.currentUser.uid));
+  return (snapshot.data()?.role as Role | undefined) ?? null;
+}
+export interface BrowserProfilesResponse {
+  settings: BrowserProfileSettings | null;
+  agent: { id: string; status: string; lastSeen: string | null; online: boolean };
+}
+export async function getBrowserProfiles() { return api<BrowserProfilesResponse>('/v1/flow/browser-profiles'); }
+export async function scanBrowserProfiles() { return api<{command:LocalCommandRecord}>('/v1/flow/browser-profiles/scan', { method: 'POST', body: '{}' }); }
+export async function saveBrowserProfileMappings(mappings: Partial<Record<BrowserPlatform,string>>) { return api<{settings:BrowserProfileSettings}>('/v1/flow/browser-profiles/mappings', { method: 'PUT', body: JSON.stringify(mappings) }); }
+export async function testBrowserProfile(platform: BrowserPlatform) { return api<{command:LocalCommandRecord}>('/v1/flow/browser-profiles/test', { method: 'POST', body: JSON.stringify({ platform }) }); }
+export async function waitBrowserCommand(commandId: string, timeoutMs = 75_000): Promise<LocalCommandRecord> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { command } = await api<{command:LocalCommandRecord}>(`/v1/flow/browser-profiles/commands/${commandId}`);
+    if (command.status === 'succeeded' || command.status === 'needs_manual') return command;
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+  throw new Error('Local Agent chưa phản hồi trong thời gian chờ.');
+}
 export async function downloadSceneList(contentId: string) { const backendUrl = import.meta.env.VITE_BACKEND_URL; const token = await auth?.currentUser?.getIdToken(); if (!backendUrl || !token) throw new Error('Cần đăng nhập.'); const response = await fetch(`${backendUrl}/v1/content/${contentId}/scene-list.tsv`, { headers: { authorization: `Bearer ${token}` } }); if (!response.ok) throw new Error('Không thể tải danh sách scene.'); return response.blob(); }
 
 export async function testConnector(platform: 'ga4' | 'search_console' | 'website', url?: string) { return api<{status:string}>('/connectors/test', { method: 'POST', body: JSON.stringify(platform === 'website' ? { platform, url } : { platform }) }); }

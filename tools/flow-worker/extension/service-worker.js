@@ -1,6 +1,17 @@
 const BRIDGE_URL = 'http://127.0.0.1:32187';
 let polling = false;
 
+function allowedAutomationUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && [
+      'labs.google', 'www.facebook.com', 'facebook.com', 'business.facebook.com',
+      'www.tiktok.com', 'tiktok.com', 'www.linkedin.com', 'linkedin.com',
+      'oa.zalo.me', 'zalo.me', 'chat.zalo.me',
+    ].includes(url.hostname);
+  } catch { return false; }
+}
+
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const bridgeId = async () => {
   const current = await chrome.storage.local.get(['bridgeId']);
@@ -38,7 +49,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   const profileId = url.searchParams.get('profileId');
   const nonce = url.searchParams.get('nonce');
   const next = url.searchParams.get('next');
-  if (!profileId || !nonce || !next?.startsWith('https://labs.google/')) return;
+  if (!profileId || !nonce || !next || !allowedAutomationUrl(next)) return;
   registerBridge(profileId, nonce).then(() => chrome.tabs.update(tabId, { url: next })).catch(() => undefined);
 });
 
@@ -246,6 +257,51 @@ async function runInFlow(func, args = []) {
   return result[0]?.result;
 }
 
+function inspectSocialPage(platform) {
+  const visible = (element) => {
+    const style = window.getComputedStyle(element); const rect = element.getBoundingClientRect();
+    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  };
+  const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const controls = [...document.querySelectorAll('button,a,[role="button"],[role="textbox"],[contenteditable="true"],input')].filter(visible);
+  const label = (element) => clean(`${element.getAttribute('aria-label') ?? ''} ${element.getAttribute('placeholder') ?? ''} ${element.textContent ?? ''}`);
+  const labels = controls.map(label);
+  const bodyText = clean(document.body?.innerText ?? '').slice(0, 50000);
+  const url = location.href;
+  const loginPattern = /\blog[ -]?in\b|\bsign[ -]?in\b|đăng nhập|connexion/i;
+  const verificationPattern = /captcha|two-factor|2-step|security check|verify (?:your|it'?s)|xác minh|checkpoint/i;
+  const onLoginUrl = /\/login|\/signin|accounts\./i.test(location.pathname + location.hostname);
+  const needsVerification = verificationPattern.test(bodyText);
+  const platformPatterns = {
+    facebook: { composer: /what'?s on your mind|bạn đang nghĩ gì|create post|tạo bài viết/i, media: /photo\/video|ảnh\/video|reel/i, publish: /^(post|đăng)$/i },
+    tiktok: { composer: /caption|mô tả/i, media: /select (?:a )?video|upload|tải (?:video )?lên/i, publish: /^(post|đăng)$/i, privacy: /who can watch|ai có thể xem|privacy|quyền riêng tư/i },
+    linkedin: { composer: /start a post|bắt đầu một bài đăng|create a post/i, media: /add media|media|photo|video|ảnh/i, publish: /^(post|đăng)$/i },
+    zalo: { composer: /soạn bài|tạo bài viết|nội dung|composer/i, media: /hình ảnh|video|media|tải lên/i, publish: /^(xuất bản|đăng bài|đăng)$/i },
+  };
+  const patterns = platformPatterns[platform] ?? platformPatterns.facebook;
+  const composer = labels.some((value) => patterns.composer.test(value));
+  const media = labels.some((value) => patterns.media.test(value)) || Boolean(document.querySelector('input[type="file"]'));
+  const publish = labels.some((value) => patterns.publish.test(value));
+  const privacy = patterns.privacy ? labels.some((value) => patterns.privacy.test(value)) : undefined;
+  const prominentLogin = labels.some((value) => loginPattern.test(value) && value.length < 80);
+  const session = needsVerification ? 'needs_verification' : (onLoginUrl || (prominentLogin && !composer && !media)) ? 'needs_login' : 'ready';
+  const email = labels.map((value) => value.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0]?.toLowerCase() ?? null).find(Boolean) ?? null;
+  const entity = bodyText.match(/(?:Giải Pháp )?An Ninh Cảnh Vệ|ANCV/i)?.[0] ?? null;
+  return {
+    url, platform, session, account: email, entity,
+    composer, media, publish, ...(privacy === undefined ? {} : { privacy }),
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+async function runInActiveTab(func, args = []) {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab?.id || !allowedAutomationUrl(tab.url ?? '')) throw new Error('SOCIAL_TAB_NOT_FOUND');
+  const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func, args });
+  return result[0]?.result;
+}
+
 function nativeInputTarget(kind) {
   const visible = (element) => {
     const style = window.getComputedStyle(element); const rect = element.getBoundingClientRect();
@@ -368,12 +424,17 @@ async function nativeGenerate(baselineOutputIds) {
 
 async function execute(command) {
   if (command.type === 'open_url') {
-    const tabs = await chrome.tabs.query({ url: 'https://labs.google/*' });
-    const tab = tabs.at(-1);
+    if (!allowedAutomationUrl(command.payload.url)) throw new Error('AUTOMATION_URL_DENIED');
+    const target = new URL(command.payload.url);
+    const tabs = target.hostname === 'labs.google'
+      ? await chrome.tabs.query({ url: 'https://labs.google/*' })
+      : await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
     if (tab?.id) await chrome.tabs.update(tab.id, { url: command.payload.url, active: true });
     else await chrome.tabs.create({ url: command.payload.url, active: true });
     return { opened: true };
   }
+  if (command.type === 'inspect_social') return runInActiveTab(inspectSocialPage, [command.payload.platform]);
   if (command.type === 'inspect_flow') return runInFlow(inspectFlowPage);
   if (command.type === 'diagnose_flow') return runInFlow(diagnoseFlowPage);
   if (command.type === 'prepare_flow') return runInFlow(prepareFlowPage);

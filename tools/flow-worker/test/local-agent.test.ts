@@ -4,6 +4,7 @@ import { localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
 import { findNewCompletedDownloads, flowJobTempRelativePath } from '../src/worker.js';
+import { parseChromeProfiles } from '../src/chrome-profile-scanner.js';
 
 const config: LocalAgentConfig = {
   agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
@@ -44,5 +45,19 @@ describe('Flow download detection', () => {
   it('uses a dedicated workspace temp directory per job', () => {
     const job = { id: 'scene-01', contentId: 'ANCV-VID-2026-004', sceneNumber: 2 } as FlowJobRecord;
     expect(flowJobTempRelativePath(job)).toBe('.tmp/flow/scene-01/ANCV-VID-2026-004_S02_T01.mp4');
+  });
+});
+
+describe('safe Chrome profile scanning', () => {
+  it('returns only safe profile metadata and ignores unrelated Local State fields', () => {
+    const records = parseChromeProfiles({
+      profile: { info_cache: {
+        'Profile 42': { name: 'Nhat', gaia_name: 'Nguyen Nhat', user_name: 'NHAT@example.com' },
+        'Unsafe/Path': { name: 'ignored', user_name: 'secret@example.com' },
+      } },
+      password_manager: { token: 'must-not-leak' },
+    } as never, '2026-08-12T00:00:00.000Z');
+    expect(records).toEqual([{ chromeProfileId: 'Profile 42', profileLabel: 'Nhat', email: 'nhat@example.com', detectedAt: '2026-08-12T00:00:00.000Z' }]);
+    expect(JSON.stringify(records)).not.toContain('must-not-leak');
   });
 });

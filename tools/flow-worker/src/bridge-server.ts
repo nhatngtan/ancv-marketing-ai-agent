@@ -20,6 +20,17 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
+function allowedNextUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && new Set([
+      'labs.google', 'www.facebook.com', 'facebook.com', 'business.facebook.com',
+      'www.tiktok.com', 'tiktok.com', 'www.linkedin.com', 'linkedin.com',
+      'oa.zalo.me', 'zalo.me', 'chat.zalo.me',
+    ]).has(url.hostname);
+  } catch { return false; }
+}
+
 async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let length = 0;
@@ -108,7 +119,7 @@ export class BridgeServer {
       const nonce = url.searchParams.get('nonce') ?? '';
       const next = url.searchParams.get('next') ?? '';
       const setup = this.setupNonces.get(nonce);
-      if (!setup || setup.profileId !== profileId || setup.expiresAt < Date.now() || !next.startsWith('https://labs.google/')) {
+      if (!setup || setup.profileId !== profileId || setup.expiresAt < Date.now() || !allowedNextUrl(next)) {
         response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('ANCV Browser Bridge setup không hợp lệ.');
         return;
       }

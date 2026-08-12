@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import type { ContentRecord, FlowAccountRecord, FlowJobRecord, SceneRecord } from '@ancv/shared';
-import { requireFirebaseEditor } from '../middleware/auth.js';
+import { BROWSER_PLATFORMS, type BrowserPlatform, type BrowserProfileMapping, type BrowserProfileSettings, type ChromeProfileMetadata, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type SceneRecord } from '@ancv/shared';
+import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
 
 export const flowRouter = Router();
-flowRouter.use(requireFirebaseEditor);
 
 const createJobSchema = z.object({
   contentDocId: z.string().min(1).max(200),
@@ -17,6 +16,27 @@ const openFolderSchema = z.object({
   sceneId: z.string().min(1).max(200),
   agentId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/).default('ancv-windows-01'),
 });
+const chromeProfileIdSchema = z.string().regex(/^(?:Default|Profile(?: \d+)?)$/);
+const browserMappingSchema = z.object({
+  google_flow: chromeProfileIdSchema.optional(), facebook: chromeProfileIdSchema.optional(),
+  tiktok: chromeProfileIdSchema.optional(), linkedin: chromeProfileIdSchema.optional(), zalo: chromeProfileIdSchema.optional(),
+});
+const browserTestSchema = z.object({ platform: z.enum(BROWSER_PLATFORMS), agentId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/).default('ancv-windows-01') });
+
+async function localAgentOnline(agentId: string): Promise<boolean> {
+  const snapshot = await db().collection('localAgents').doc(agentId).get();
+  const data = snapshot.data();
+  return data?.status === 'online' && Date.now() - Date.parse(String(data.lastSeen ?? '')) < 45_000;
+}
+
+async function queueLocalCommand(input: { agentId: string; command: 'scan_profiles' | 'validate_profile'; platform?: BrowserPlatform; chromeProfileId?: string; uid: string }) {
+  if (!await localAgentOnline(input.agentId)) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
+  const now = new Date().toISOString();
+  const ref = db().collection('localCommands').doc();
+  const command = { id: ref.id, agentId: input.agentId, command: input.command, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: input.uid, ...(input.platform ? { platform: input.platform } : {}), ...(input.chromeProfileId ? { chromeProfileId: input.chromeProfileId } : {}) };
+  await ref.set(command);
+  return command;
+}
 
 export function isOfficialFlowProjectUrl(value: string): boolean {
   try {
@@ -29,7 +49,71 @@ export function isOfficialFlowProjectUrl(value: string): boolean {
   }
 }
 
-flowRouter.post('/jobs', async (request, response, next) => {
+flowRouter.get('/browser-profiles', requireFirebaseAdmin, async (_request, response, next) => {
+  try {
+    const [settings, agent] = await Promise.all([db().collection('systemSettings').doc('browserProfiles').get(), db().collection('localAgents').doc('ancv-windows-01').get()]);
+    const lastSeen = String(agent.data()?.lastSeen ?? '');
+    response.json({
+      settings: settings.exists ? settings.data() : null,
+      agent: { id: 'ancv-windows-01', status: agent.data()?.status ?? 'offline', lastSeen: lastSeen || null, online: agent.data()?.status === 'online' && Date.now() - Date.parse(lastSeen) < 45_000 },
+    });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/browser-profiles/scan', requireFirebaseAdmin, async (_request, response, next) => {
+  try { response.status(201).json({ command: await queueLocalCommand({ agentId: 'ancv-windows-01', command: 'scan_profiles', uid: response.locals.identity.uid }) }); }
+  catch (error) { next(error); }
+});
+
+flowRouter.put('/browser-profiles/mappings', requireFirebaseAdmin, async (request, response, next) => {
+  try {
+    const selections = browserMappingSchema.parse(request.body);
+    const ref = db().collection('systemSettings').doc('browserProfiles');
+    const snapshot = await ref.get();
+    if (!snapshot.exists) throw Object.assign(new Error('CHROME_PROFILES_NOT_SCANNED'), { statusCode: 409 });
+    const settings = snapshot.data() as BrowserProfileSettings;
+    const profiles = (settings.profiles ?? []) as ChromeProfileMetadata[];
+    const now = new Date().toISOString(); const uid = response.locals.identity.uid as string;
+    const mappings: Partial<Record<BrowserPlatform, BrowserProfileMapping>> = {};
+    const validations = { ...(settings.validations ?? {}) };
+    for (const platform of BROWSER_PLATFORMS) {
+      const chromeProfileId = selections[platform];
+      if (!chromeProfileId) continue;
+      const profile = profiles.find((item) => item.chromeProfileId === chromeProfileId);
+      if (!profile) throw Object.assign(new Error(`CHROME_PROFILE_NOT_FOUND:${platform}`), { statusCode: 409 });
+      const previous = settings.mappings?.[platform];
+      mappings[platform] = {
+        platform, machineId: settings.machineId, chromeProfileId, profileLabel: profile.profileLabel,
+        updatedAt: now, updatedBy: uid,
+      };
+      if (previous?.chromeProfileId !== chromeProfileId) delete validations[platform];
+    }
+    await ref.update({ mappings, validations, updatedAt: now, updatedBy: uid });
+    response.json({ settings: { ...settings, mappings, validations, updatedAt: now } });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/browser-profiles/test', requireFirebaseAdmin, async (request, response, next) => {
+  try {
+    const input = browserTestSchema.parse(request.body);
+    const settings = (await db().collection('systemSettings').doc('browserProfiles').get()).data() as BrowserProfileSettings | undefined;
+    const mapping = settings?.mappings?.[input.platform];
+    if (!mapping) throw Object.assign(new Error('BROWSER_PROFILE_NOT_CONFIGURED'), { statusCode: 409 });
+    const command = await queueLocalCommand({ agentId: input.agentId, command: 'validate_profile', platform: input.platform, chromeProfileId: mapping.chromeProfileId, uid: response.locals.identity.uid });
+    response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.get('/browser-profiles/commands/:commandId', requireFirebaseAdmin, async (request, response, next) => {
+  try {
+    const commandId = z.string().regex(/^[A-Za-z0-9_-]{1,200}$/).parse(request.params.commandId);
+    const snapshot = await db().collection('localCommands').doc(commandId).get();
+    if (!snapshot.exists) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+    response.json({ command: snapshot.data() });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/jobs', requireFirebaseEditor, async (request, response, next) => {
   try {
     const input = createJobSchema.parse(request.body);
     const uid = response.locals.identity.uid as string;
@@ -72,7 +156,7 @@ flowRouter.post('/jobs', async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-flowRouter.post('/local-commands/open-scene-folder', async (request, response, next) => {
+flowRouter.post('/local-commands/open-scene-folder', requireFirebaseEditor, async (request, response, next) => {
   try {
     const input = openFolderSchema.parse(request.body);
     const uid = response.locals.identity.uid as string;

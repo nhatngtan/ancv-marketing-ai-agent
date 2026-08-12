@@ -220,10 +220,57 @@ export interface LocalAgentRecord extends AuditFields {
 export interface LocalCommandRecord extends AuditFields {
   status: 'queued' | 'processing' | 'succeeded' | 'needs_manual';
   agentId: string;
-  command: 'open_folder' | 'open_file';
-  relativePath: string;
+  command: 'open_folder' | 'open_file' | 'scan_profiles' | 'validate_profile';
+  relativePath?: string;
+  platform?: BrowserPlatform;
+  chromeProfileId?: string;
+  result?: Record<string, unknown>;
   error?: string | null;
   completedAt?: string;
+}
+
+export const BROWSER_PLATFORMS = ['google_flow', 'facebook', 'tiktok', 'linkedin', 'zalo'] as const;
+export type BrowserPlatform = (typeof BROWSER_PLATFORMS)[number];
+export type BrowserProfileStatus = 'ready' | 'login_required' | 'bridge_required' | 'unavailable' | 'not_tested';
+export type BrowserPlatformStatus = 'not_configured' | 'ready_for_write_test' | 'login_required' | 'verification_required' | 'unavailable' | 'not_tested';
+
+export interface ChromeProfileMetadata {
+  chromeProfileId: string;
+  profileLabel: string;
+  email?: string;
+  detectedAt: string;
+}
+
+export interface BrowserProfileMapping {
+  platform: BrowserPlatform;
+  machineId: string;
+  chromeProfileId: string;
+  profileLabel: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface BrowserProfileValidation {
+  profileStatus: BrowserProfileStatus;
+  platformStatus: BrowserPlatformStatus;
+  validatedAt: string;
+  chromeProfileId: string;
+  detail?: string | null;
+  detectedAccount?: string | null;
+  detectedEntity?: string | null;
+}
+
+export interface BrowserProfileSettings {
+  id: 'browserProfiles';
+  status: 'active';
+  machineId: string;
+  profiles: ChromeProfileMetadata[];
+  mappings: Partial<Record<BrowserPlatform, BrowserProfileMapping>>;
+  validations?: Partial<Record<BrowserPlatform, BrowserProfileValidation>>;
+  lastScanAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
 }
 
 export interface AIUsageTokens {

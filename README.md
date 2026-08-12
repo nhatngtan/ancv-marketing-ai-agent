@@ -72,3 +72,5 @@ UAT production gần nhất: [docs/UAT_PHASE_2C.md](docs/UAT_PHASE_2C.md).
 Google Flow Worker Experimental V1, cách đăng nhập Chrome thật và kết quả smoke: [docs/FLOW_WORKER.md](docs/FLOW_WORKER.md).
 
 ANCV Local Agent local-first và Browser Bridge: [docs/LOCAL_AGENT.md](docs/LOCAL_AGENT.md), [docs/BROWSER_BRIDGE.md](docs/BROWSER_BRIDGE.md).
+
+Chrome Profile Selector và social preflight chỉ đọc: [docs/SOCIAL_BROWSER_AGENT.md](docs/SOCIAL_BROWSER_AGENT.md).

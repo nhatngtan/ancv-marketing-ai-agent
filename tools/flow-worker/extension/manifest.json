@@ -1,10 +1,23 @@
 {
   "manifest_version": 3,
   "name": "ANCV Browser Bridge",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Cầu nối cục bộ, giới hạn cho Google Flow và ANCV Local Agent.",
   "permissions": ["tabs", "scripting", "downloads", "storage", "debugger"],
-  "host_permissions": ["https://labs.google/*", "http://127.0.0.1/*"],
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://www.facebook.com/*",
+    "https://facebook.com/*",
+    "https://business.facebook.com/*",
+    "https://www.tiktok.com/*",
+    "https://tiktok.com/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://oa.zalo.me/*",
+    "https://zalo.me/*",
+    "https://chat.zalo.me/*",
+    "http://127.0.0.1/*"
+  ],
   "background": { "service_worker": "service-worker.js" },
   "content_scripts": [
     {

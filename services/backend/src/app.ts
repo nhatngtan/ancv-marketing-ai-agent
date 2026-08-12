@@ -58,7 +58,7 @@ export function createApp() {
     const configuration = error instanceof OpenAIConfigurationError;
     const upstream = error instanceof OpenAI.APIError;
     const jobConflict = error instanceof AIJobInProgressError || error instanceof AIJobPreviouslyFailedError;
-    const flowError = error instanceof Error && error.message.startsWith('FLOW_');
+    const flowError = error instanceof Error && /^(FLOW_|LOCAL_|CHROME_|BROWSER_)/.test(error.message);
     const explicitStatus = Number((error as { statusCode?: number }).statusCode ?? 0);
     const status = validation ? 400 : jobConflict ? 409 : configuration ? 503 : upstream && error.status === 429 ? 503 : upstream ? 502 : explicitStatus || 500;
     request.log.error({ event: 'request_failed', errorType: error instanceof Error ? error.name : 'Unknown', upstreamStatus: upstream ? error.status : undefined, requestId: upstream ? error.requestID : undefined });

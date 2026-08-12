@@ -2,6 +2,10 @@ import { spawn } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
+  BrowserPlatform,
+  BrowserPlatformStatus,
+  BrowserProfileMapping,
+  BrowserProfileStatus,
   FlowAccountRecord,
   FlowJobRecord,
   LocalCommandRecord,
@@ -17,6 +21,7 @@ import { ChromeProfileManager } from "./profile-manager.js";
 import { persistLocalVideo } from "./local-storage.js";
 import { findNewFlowOutputIds } from "./flow-ui.js";
 import { processPlaywrightJob } from "./worker.js";
+import { scanChromeProfiles } from "./chrome-profile-scanner.js";
 
 interface FlowInspection {
   url: string;
@@ -35,6 +40,24 @@ interface FlowInspection {
   email?: string | null;
   limitation?: string | null;
 }
+
+interface SocialInspection {
+  platform: BrowserPlatform;
+  session: "ready" | "needs_login" | "needs_verification";
+  account?: string | null;
+  entity?: string | null;
+  composer?: boolean;
+  media?: boolean;
+  publish?: boolean;
+  privacy?: boolean;
+}
+
+const socialUrls: Record<Exclude<BrowserPlatform, "google_flow">, string> = {
+  facebook: "https://www.facebook.com/",
+  tiktok: "https://www.tiktok.com/upload",
+  linkedin: "https://www.linkedin.com/feed/",
+  zalo: "https://oa.zalo.me/manage/oa",
+};
 
 const sleep = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -582,6 +605,46 @@ export class LocalAgent {
   ): Promise<void> {
     const ref = firestore.collection("localCommands").doc(command.id);
     try {
+      if (command.command === "scan_profiles") {
+        const profiles = await scanChromeProfiles();
+        const settingsRef = firestore.collection("systemSettings").doc("browserProfiles");
+        const existing = await settingsRef.get();
+        const now = new Date().toISOString();
+        const currentMappings = existing.data()?.mappings ?? {};
+        const flowLocalMapping = this.config.profiles.find((item) => item.logicalId === "account-01" && item.kind === "system");
+        let mappings = currentMappings;
+        if (!currentMappings.google_flow && flowLocalMapping?.profileDirectory) {
+          const metadata = profiles.find((item) => item.chromeProfileId === flowLocalMapping.profileDirectory);
+          if (metadata) mappings = {
+            ...currentMappings,
+            google_flow: {
+              platform: "google_flow",
+              machineId: this.config.agentId,
+              chromeProfileId: metadata.chromeProfileId,
+              profileLabel: metadata.profileLabel,
+              updatedAt: now,
+              updatedBy: "ancv-local-agent-migration",
+            },
+          };
+        }
+        await settingsRef.set({
+          id: "browserProfiles", status: "active", machineId: this.config.agentId,
+          profiles, mappings, lastScanAt: now, updatedAt: now,
+          createdAt: existing.data()?.createdAt ?? now,
+          createdBy: existing.data()?.createdBy ?? "ancv-local-agent",
+        }, { merge: true });
+        await ref.update({ status: "succeeded", completedAt: now, updatedAt: now, error: null, result: { profileCount: profiles.length } });
+        return;
+      }
+
+      if (command.command === "validate_profile") {
+        await this.validateBrowserProfile(command);
+        const now = new Date().toISOString();
+        await ref.update({ status: "succeeded", completedAt: now, updatedAt: now, error: null });
+        return;
+      }
+
+      if (!command.relativePath) throw new Error("LOCAL_PATH_REQUIRED");
       const target = pathInsideWorkspace(this.config, command.relativePath);
       if (command.command === "open_folder")
         await mkdir(target, { recursive: true });
@@ -602,6 +665,17 @@ export class LocalAgent {
       });
     } catch (error) {
       const now = new Date().toISOString();
+      if (command.command === "validate_profile" && command.platform) {
+        const message = error instanceof Error ? error.message : String(error);
+        const profileStatus: BrowserProfileStatus = /BRIDGE/.test(message) ? "bridge_required" : "unavailable";
+        await firestore.collection("systemSettings").doc("browserProfiles").update({
+          [`validations.${command.platform}`]: {
+            profileStatus, platformStatus: "unavailable", validatedAt: now,
+            chromeProfileId: command.chromeProfileId ?? "", detail: message.slice(0, 300),
+          },
+          updatedAt: now,
+        }).catch(() => undefined);
+      }
       await ref.update({
         status: "needs_manual",
         error: (error instanceof Error ? error.message : String(error)).slice(
@@ -611,6 +685,51 @@ export class LocalAgent {
         updatedAt: now,
       });
     }
+  }
+
+  private async validateBrowserProfile(command: LocalCommandRecord): Promise<void> {
+    if (!command.platform || !command.chromeProfileId) throw new Error("PROFILE_VALIDATION_INPUT_REQUIRED");
+    const settingsRef = firestore.collection("systemSettings").doc("browserProfiles");
+    const settings = await settingsRef.get();
+    const mapping = settings.data()?.mappings?.[command.platform] as BrowserProfileMapping | undefined;
+    if (!mapping || mapping.chromeProfileId !== command.chromeProfileId) throw new Error("PROFILE_MAPPING_CHANGED");
+    const now = new Date().toISOString();
+    if (command.platform === "google_flow") {
+      const account = (await firestore.collection("flowAccounts").doc("account-01").get()).data() as FlowAccountRecord | undefined;
+      if (!account?.projectUrl) throw new Error("FLOW_PROJECT_URL_REQUIRED");
+      await this.profiles.openSystemProfile("profile-google-flow", command.chromeProfileId, account.projectUrl);
+      await sleep(2_000);
+      await this.bridge.sendCommand("profile-google-flow", "prepare_flow", {}, 30_000);
+      await sleep(1_000);
+      const inspection = await this.bridge.sendCommand("profile-google-flow", "inspect_flow", {}, 30_000) as FlowInspection;
+      const profileStatus: BrowserProfileStatus = inspection.session === "ready" ? "ready" : inspection.session === "needs_login" ? "login_required" : "unavailable";
+      const platformStatus: BrowserPlatformStatus = inspection.session === "needs_verification" ? "verification_required" : inspection.session === "needs_login" ? "login_required" : inspection.session === "ready" ? "ready_for_write_test" : "unavailable";
+      await settingsRef.update({ validations: {
+        ...(settings.data()?.validations ?? {}),
+        google_flow: { profileStatus, platformStatus, validatedAt: now, chromeProfileId: command.chromeProfileId, detail: inspection.limitation ?? null, detectedAccount: inspection.email ?? null },
+      }, updatedAt: now });
+      return;
+    }
+    const logicalId = `profile-${command.platform}`;
+    await this.profiles.openSystemProfile(logicalId, command.chromeProfileId, socialUrls[command.platform]);
+    await sleep(3_000);
+    const inspection = await this.bridge.sendCommand(logicalId, "inspect_social", { platform: command.platform }, 30_000) as SocialInspection;
+    const profileStatus: BrowserProfileStatus = inspection.session === "ready" ? "ready" : inspection.session === "needs_login" ? "login_required" : "unavailable";
+    const controlsReady = Boolean(inspection.composer && inspection.media && inspection.publish && (command.platform !== "tiktok" || inspection.privacy));
+    const identityReady = command.platform === "facebook" || command.platform === "linkedin" || command.platform === "zalo" ? Boolean(inspection.entity) : Boolean(inspection.account);
+    const platformStatus: BrowserPlatformStatus = inspection.session === "needs_verification" ? "verification_required"
+      : inspection.session === "needs_login" ? "login_required"
+      : controlsReady && identityReady ? "ready_for_write_test"
+      : "verification_required";
+    const missing = [!inspection.composer && "composer", !inspection.media && "media", !inspection.publish && "publish", command.platform === "tiktok" && !inspection.privacy && "privacy", !identityReady && "account/page"].filter(Boolean).join(", ");
+    await settingsRef.update({ validations: {
+      ...(settings.data()?.validations ?? {}),
+      [command.platform]: {
+        profileStatus, platformStatus, validatedAt: now, chromeProfileId: command.chromeProfileId,
+        detail: missing ? `Chưa xác minh: ${missing}` : null,
+        detectedAccount: inspection.account ?? null, detectedEntity: inspection.entity ?? null,
+      },
+    }, updatedAt: now });
   }
 }
 
