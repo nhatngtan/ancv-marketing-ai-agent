@@ -1,6 +1,6 @@
 # UAT GIAI ĐOẠN 2D.4 — HYBRID FLOW EXECUTION
 
-Ngày kiểm tra: 2026-08-12  
+Ngày kiểm tra: 2026-08-12
 Kết quả: **PARTIAL**
 
 ## Dashboard và routing
