@@ -171,7 +171,7 @@ export function ContentStudioPage({
                   </Badge>
                 </span>
                 <span className="platform-stack">
-                  {item.platforms.map((platform) => (
+                  {(item.platforms ?? []).map((platform) => (
                     <i key={platform.platform}>
                       {platformLabels[platform.platform]?.[0]}
                     </i>

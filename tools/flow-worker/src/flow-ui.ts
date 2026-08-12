@@ -303,8 +303,16 @@ export async function openFlowOutputById(page: Page, outputId: string): Promise<
   if (!/^[a-z0-9-]{8,80}$/i.test(outputId)) return false;
   if (page.url().includes(`/edit/${outputId}`)) return true;
   const link = page.locator(`a[href*="/edit/${outputId}"]`).first();
-  if (!await link.isVisible().catch(() => false)) return false;
-  await link.click({ timeout: 15_000 });
+  if (await link.isVisible().catch(() => false)) {
+    await link.click({ timeout: 15_000 });
+  } else {
+    const projectUrl = flowProjectBaseUrl(page.url());
+    if (!projectUrl) return false;
+    await page.goto(`${projectUrl}/edit/${outputId}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
+    });
+  }
   await page.waitForURL((url) => url.pathname.includes(`/edit/${outputId}`), { timeout: 30_000 });
   return true;
 }

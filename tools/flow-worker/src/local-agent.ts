@@ -16,6 +16,7 @@ import { BridgeServer } from "./bridge-server.js";
 import { ChromeProfileManager } from "./profile-manager.js";
 import { persistLocalVideo } from "./local-storage.js";
 import { findNewFlowOutputIds } from "./flow-ui.js";
+import { processPlaywrightJob } from "./worker.js";
 
 interface FlowInspection {
   url: string;
@@ -263,7 +264,9 @@ export class LocalAgent {
       .get();
     const jobs = snapshot.docs.filter(
       (document) =>
-        (document.data() as FlowJobRecord).executionMode === "local_agent",
+        ["local_agent", "playwright_fallback"].includes(
+          (document.data() as FlowJobRecord).executionMode ?? "",
+        ),
     );
     if (!jobs.length) return;
     const now = new Date().toISOString();
@@ -290,7 +293,11 @@ export class LocalAgent {
       .get();
     const candidate = snapshot.docs
       .map((document) => document.data() as FlowJobRecord)
-      .filter((job) => job.executionMode === "local_agent")
+      .filter((job) =>
+        ["local_agent", "playwright_fallback"].includes(
+          job.executionMode ?? "",
+        ),
+      )
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
     if (!candidate) return null;
     const ref = firestore.collection("flowJobs").doc(candidate.id);
@@ -300,7 +307,9 @@ export class LocalAgent {
       if (
         !job ||
         job.status !== "queued" ||
-        job.executionMode !== "local_agent"
+        !["local_agent", "playwright_fallback"].includes(
+          job.executionMode ?? "",
+        )
       )
         return null;
       const now = new Date().toISOString();
@@ -348,6 +357,10 @@ export class LocalAgent {
   }
 
   private async processFlowJob(job: FlowJobRecord): Promise<void> {
+    if (job.executionMode === "playwright_fallback") {
+      await processPlaywrightJob(job);
+      return;
+    }
     const account = (
       await firestore.collection("flowAccounts").doc(job.flowAccountId).get()
     ).data() as FlowAccountRecord | undefined;

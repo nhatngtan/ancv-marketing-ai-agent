@@ -1,14 +1,60 @@
 import { randomUUID } from 'node:crypto';
-import { stat, unlink, writeFile } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { mkdir, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { dirname, extname } from 'node:path';
 import type { FlowAccountRecord, FlowJobRecord } from '@ancv/shared';
 import { connectAccountContext } from './browser.js';
 import { ensureLocalDirectories, flowConfig, pathInsideDataRoot } from './config.js';
 import { firestore, storageBucket } from './firebase.js';
-import { detectGoogleAccountEmail, findDownloadControl, findNewFlowOutputIds, getFlowOutputIds, getStableFlowOutputIds, inspectFlowUi, openExistingFlowProject, openFlowOutputById, waitForFlowUi } from './flow-ui.js';
+import { detectGoogleAccountEmail, findDownloadControl, findNewFlowOutputIds, getFlowOutputIds, getStableFlowOutputIds, inspectFlowUi, isSingleOutputSelected, openExistingFlowProject, openFlowOutputById, waitForFlowUi } from './flow-ui.js';
 import { persistLocalVideo } from './local-storage.js';
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export function findNewCompletedDownloads(before: string[], current: string[]): string[] {
+  const baseline = new Set(before);
+  return current.filter((fileName) => !baseline.has(fileName) && !fileName.endsWith('.crdownload'));
+}
+
+async function downloadThroughFlowUi(
+  page: Awaited<ReturnType<typeof connectAccountContext>>['page'],
+  control: NonNullable<Awaited<ReturnType<typeof findDownloadControl>>>,
+  targetPath: string,
+): Promise<void> {
+  const downloadDirectory = dirname(targetPath);
+  await mkdir(downloadDirectory, { recursive: true });
+  await stat(targetPath)
+    .then(() => { throw new Error('FLOW_DOWNLOAD_TEMP_EXISTS'); })
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.message === 'FLOW_DOWNLOAD_TEMP_EXISTS') throw error;
+      if (error.code !== 'ENOENT') throw error;
+    });
+  const baseline = await readdir(downloadDirectory);
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('Browser.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: downloadDirectory,
+      eventsEnabled: true,
+    });
+    await control.locator.click({ force: true, timeout: 15_000 });
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await page.waitForTimeout(1_000);
+      const candidates = findNewCompletedDownloads(baseline, await readdir(downloadDirectory));
+      if (candidates.length > 1) throw new Error(`FLOW_DOWNLOAD_AMBIGUOUS:${candidates.length}`);
+      if (candidates.length === 1) {
+        const downloadedPath = pathInsideDataRoot('downloads', candidates[0]!);
+        const details = await stat(downloadedPath);
+        if (!details.isFile() || details.size < 1_024) continue;
+        await rename(downloadedPath, targetPath);
+        return;
+      }
+    }
+    throw new Error('FLOW_DOWNLOAD_UI_TIMEOUT');
+  } finally {
+    await cdp.detach().catch(() => undefined);
+  }
+}
 
 async function markInterruptedJobs(): Promise<void> {
   const snapshot = await firestore.collection('flowJobs').where('status', '==', 'processing').get();
@@ -68,7 +114,7 @@ async function uploadVideo(job: FlowJobRecord, filePath: string): Promise<{ asse
   return { assetId: assetRef.id, storagePath };
 }
 
-async function processJob(job: FlowJobRecord): Promise<void> {
+export async function processPlaywrightJob(job: FlowJobRecord): Promise<void> {
   const accountSnapshot = await firestore.collection('flowAccounts').doc(job.flowAccountId).get();
   const account = accountSnapshot.data() as FlowAccountRecord | undefined;
   if (!account || account.status !== 'ready') { await failJob(job, 'Tài khoản Flow chưa sẵn sàng.', account?.status ?? 'needs_login'); return; }
@@ -87,7 +133,7 @@ async function processJob(job: FlowJobRecord): Promise<void> {
       const accountStatus = ui.session === 'needs_verification' ? 'needs_verification' : 'needs_login';
       await failJob(job, ui.limitation ?? `Flow recovery preflight: ${ui.session}`, accountStatus); return;
     }
-    if (!recoveryMode && (ui.session !== 'ready' || !ui.prompt || !ui.generate)) {
+    if (!recoveryMode && (ui.session !== 'ready' || !ui.prompt || !ui.generate || !await isSingleOutputSelected(page))) {
       const accountStatus = ui.session === 'needs_verification' ? 'needs_verification' : ui.session === 'needs_login' ? 'needs_login' : 'unavailable';
       await failJob(job, ui.limitation ?? `Flow preflight: ${ui.session}`, accountStatus); return;
     }
@@ -96,11 +142,16 @@ async function processJob(job: FlowJobRecord): Promise<void> {
       console.log(JSON.stringify({ event: 'flow_download_recovery', jobId: job.id, generateIntentAt: job.generateIntentAt }));
       const baselineIds = new Set(job.baselineOutputIds ?? []);
       if (!baselineIds.size) { await failJob(job, 'Recovery thiếu baseline output IDs; không chọn output cũ và không Generate lại.'); return; }
+      const persistedOutputId = job.flowDetailId && !baselineIds.has(job.flowDetailId)
+        ? job.flowDetailId
+        : null;
       const recoveryDeadline = Date.now() + 60_000;
       let lastProbe = '';
       while (Date.now() < recoveryDeadline && !downloadControl) {
         const outputIds = await getFlowOutputIds(page);
-        const newIds = findNewFlowOutputIds([...baselineIds], outputIds);
+        const newIds = persistedOutputId
+          ? [persistedOutputId]
+          : findNewFlowOutputIds([...baselineIds], outputIds);
         if (newIds.length > 1) throw new Error(`FLOW_RECOVERY_OUTPUT_AMBIGUOUS:${newIds.length}`);
         const detailOpened = newIds.length === 1 && await openFlowOutputById(page, newIds[0]!);
         if (detailOpened) downloadControl = await findDownloadControl(page);
@@ -115,46 +166,36 @@ async function processJob(job: FlowJobRecord): Promise<void> {
       await ui.prompt!.locator.fill(job.prompt);
       const baselineOutputIds = await getStableFlowOutputIds(page);
       const intentAt = new Date().toISOString();
-      await firestore.collection('flowJobs').doc(job.id).update({ generateIntentAt: intentAt, baselineOutputIds, updatedAt: intentAt });
+      await firestore.collection('flowJobs').doc(job.id).update({
+        generateIntentAt: intentAt,
+        generateClicks: 0,
+        generateInputMethod: 'playwright',
+        executionEngine: 'playwright_fallback',
+        baselineOutputIds,
+        updatedAt: intentAt,
+      });
       await ui.generate!.locator.click();
+      await firestore.collection('flowJobs').doc(job.id).update({
+        generateClicks: 1,
+        updatedAt: new Date().toISOString(),
+      });
       const deadline = Date.now() + flowConfig.generationTimeoutMs;
       while (Date.now() < deadline && !downloadControl) {
         await page.waitForTimeout(5_000);
         const outputIds = await getFlowOutputIds(page);
         const newIds = findNewFlowOutputIds(baselineOutputIds, outputIds);
         if (newIds.length > 1) throw new Error(`FLOW_OUTPUT_AMBIGUOUS:${newIds.length}`);
-        if (newIds.length === 1 && await openFlowOutputById(page, newIds[0]!)) downloadControl = await findDownloadControl(page);
+        if (newIds.length === 1 && await openFlowOutputById(page, newIds[0]!)) {
+          job.flowDetailId = newIds[0]!;
+          await firestore.collection('flowJobs').doc(job.id).update({ flowDetailId: job.flowDetailId, updatedAt: new Date().toISOString() });
+          downloadControl = await findDownloadControl(page);
+        }
       }
     }
     if (!downloadControl) { await failJob(job, 'Không xác định được output/download trong timeout; không Generate lại.'); return; }
     await downloadControl.locator.scrollIntoViewIfNeeded();
     downloadedPath = pathInsideDataRoot('downloads', `${job.contentId}_S${String(job.sceneNumber).padStart(2, '0')}_T01.mp4`);
-    try {
-      const [download] = await Promise.all([
-        page.waitForEvent('download', { timeout: 15_000 }),
-        downloadControl.locator.click({ force: true, timeout: 15_000 }),
-      ]);
-      const extension = extname(download.suggestedFilename()) || '.mp4';
-      downloadedPath = pathInsideDataRoot('downloads', `${job.contentId}_S${String(job.sceneNumber).padStart(2, '0')}_T01${extension}`);
-      await download.saveAs(downloadedPath);
-    } catch {
-      const videos = page.locator('video[src]');
-      let mediaVideo = videos.first();
-      for (let index = 0; index < await videos.count(); index += 1) {
-        if (await videos.nth(index).isVisible()) { mediaVideo = videos.nth(index); break; }
-      }
-      const source = await mediaVideo.getAttribute('src');
-      if (!source) throw new Error('FLOW_MEDIA_SOURCE_NOT_FOUND_AFTER_DOWNLOAD_CLICK');
-      const response = await page.context().request.get(new URL(source, page.url()).toString(), { timeout: 60_000 });
-      const contentType = response.headers()['content-type'] ?? '';
-      const contentLength = Number(response.headers()['content-length'] ?? 0);
-      if (!response.ok() || (!contentType.startsWith('video/') && contentType !== 'application/octet-stream')) throw new Error(`FLOW_MEDIA_GET_FAILED_${response.status()}`);
-      if (contentLength > 1_000_000_000) throw new Error('FLOW_MEDIA_TOO_LARGE');
-      const body = await response.body();
-      if (body.length < 1_024) throw new Error('FLOW_MEDIA_EMPTY');
-      await writeFile(downloadedPath, body);
-      console.log(JSON.stringify({ event: 'flow_download_api_fallback', jobId: job.id, bytes: body.length }));
-    }
+    await downloadThroughFlowUi(page, downloadControl, downloadedPath);
     if (job.storageStrategy === 'firebase') {
       const uploaded = await uploadVideo(job, downloadedPath);
       await unlink(downloadedPath); downloadedPath = '';
@@ -181,6 +222,6 @@ export async function runWorker(): Promise<void> {
   console.log('FLOW_WORKER_READY single_job=true parallel=false auto_retry=false');
   while (true) {
     const job = await nextQueuedJob();
-    if (job) await processJob(job); else await sleep(flowConfig.pollIntervalMs);
+    if (job) await processPlaywrightJob(job); else await sleep(flowConfig.pollIntervalMs);
   }
 }

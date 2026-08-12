@@ -53,12 +53,18 @@ export async function persistLocalVideo(job: FlowJobRecord, temporaryPath: strin
     fileName: relativePath.split('/').at(-1) ?? `${job.contentId}.mp4`,
     contentType: 'video/mp4',
     sizeBytes: destinationInfo.size,
+    fileSize: destinationInfo.size,
+    mimeType: 'video/mp4',
     sceneId: job.sceneId,
     takeNumber,
     selected: false,
     source: 'google_flow',
     flowAccountId: job.flowAccountId,
     flowJobId: job.id,
+    ...(job.executionMode === 'playwright_fallback'
+      ? { executionEngine: 'playwright_fallback' as const }
+      : {}),
+    ...(job.flowDetailId ? { outputId: job.flowDetailId } : {}),
     status: 'ready',
     createdAt: now,
     updatedAt: now,
@@ -69,6 +75,9 @@ export async function persistLocalVideo(job: FlowJobRecord, temporaryPath: strin
   batch.set(assetRef, asset);
   batch.update(firestore.collection('flowJobs').doc(job.id), {
     status: 'succeeded', assetId: asset.id, storageType: 'local', relativePath,
+    ...(job.executionMode === 'playwright_fallback'
+      ? { executionEngine: 'playwright_fallback' as const }
+      : {}),
     completedAt: now, updatedAt: now, error: null,
   });
   batch.update(firestore.collection('scenes').doc(job.sceneId), {

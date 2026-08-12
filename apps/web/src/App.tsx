@@ -110,7 +110,7 @@ function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
 
 function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; aiUsage: { requests: number; totalTokens: number; images: number }; onNavigate: (page: PageKey) => void }) {
   const published = contents.filter((item) => item.status === 'published' || item.status === 'partially_published').length;
-  const actionCount = contents.flatMap((item) => item.platforms).filter((item) => item.status === 'needs_action' || item.status === 'manual_pending').length;
+  const actionCount = contents.flatMap((item) => item.platforms ?? []).filter((item) => item.status === 'needs_action' || item.status === 'manual_pending').length;
   const analyticsSources = [
     { platform: 'ga4' as const, label: 'GA4' },
     { platform: 'search_console' as const, label: 'Search Console' },

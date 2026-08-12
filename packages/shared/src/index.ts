@@ -162,6 +162,10 @@ export interface MediaAssetRecord extends AuditFields {
   source?: 'manual_upload' | 'google_flow_worker' | 'google_flow' | 'openai';
   flowAccountId?: string;
   flowJobId?: string;
+  executionEngine?: 'playwright_fallback';
+  outputId?: string;
+  fileSize?: number;
+  mimeType?: string;
 }
 
 export interface FlowAccountRecord extends AuditFields {
@@ -188,7 +192,7 @@ export interface FlowJobRecord extends AuditFields {
   completedAt?: string;
   generateIntentAt?: string;
   generateClicks?: number;
-  generateInputMethod?: 'dom' | 'cdp_mouse';
+  generateInputMethod?: 'dom' | 'cdp_mouse' | 'playwright';
   generationAcceptanceSignal?: boolean;
   generationRequestObserved?: boolean;
   generationResponseStatus?: number | null;
@@ -197,6 +201,7 @@ export interface FlowJobRecord extends AuditFields {
   flowDetailId?: string;
   assetId?: string;
   executionMode?: 'local_agent' | 'playwright_fallback';
+  executionEngine?: 'playwright_fallback';
   storageStrategy?: 'local_first' | 'firebase';
   workerInstanceId?: string | number;
 }

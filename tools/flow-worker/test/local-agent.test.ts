@@ -3,6 +3,7 @@ import type { FlowJobRecord } from '@ancv/shared';
 import { localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
+import { findNewCompletedDownloads } from '../src/worker.js';
 
 const config: LocalAgentConfig = {
   agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
@@ -29,5 +30,14 @@ describe('Flow output detection', () => {
   it('detects a new detail navigation when grid links are virtualized', () => {
     expect(findNewFlowOutputIds(['a', 'b', 'c'], [], 'd')).toEqual(['d']);
     expect(findNewFlowOutputIds(['a', 'b', 'c'], [], 'b')).toEqual([]);
+  });
+});
+
+describe('Flow download detection', () => {
+  it('ignores baseline files and incomplete Chrome downloads', () => {
+    expect(findNewCompletedDownloads(
+      ['old.mp4'],
+      ['old.mp4', 'new.mp4.crdownload', 'new.mp4'],
+    )).toEqual(['new.mp4']);
   });
 });
