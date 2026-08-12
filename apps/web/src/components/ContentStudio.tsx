@@ -741,7 +741,7 @@ function SceneEditor({
                 {localAgentOnline ? "Local Agent Online" : "Local Agent Offline"}
               </Badge>{" "}
               <Badge tone={localAgent?.bridgeStatus === "connected" ? "success" : "warning"}>
-                {localAgent?.bridgeStatus === "connected" ? "Bridge Connected" : "Bridge Disconnected"}
+                {localAgent?.bridgeStatus === "connected" ? "Bridge đã kết nối" : "Bridge chưa kết nối"}
               </Badge>
             </div>
             <small>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, BarChart3, CalendarDays, Check, ChevronRight, CircleAlert, Clipboard, FileText,
   Globe2, HeartPulse, LayoutDashboard, Link2, LogIn, Menu, Plus, Search, Settings, Share2,
-  ShieldCheck, Sparkles, Video, X,
+  Sparkles, Video, X,
 } from 'lucide-react';
 import {
   connectorModeVi, connectorStatusVi, type ConnectorRecord, type ContentRecord, type ContentType,
@@ -13,6 +13,8 @@ import { EmptyState } from './components/EmptyState';
 import { StatCard } from './components/StatCard';
 import { ContentStudioPage } from './components/ContentStudio';
 import { CompanySettings } from './components/CompanySettings';
+import ancvLogo from './assets/brand/ancv-logo.png';
+import ancvIcon from './assets/brand/ancv-icon.png';
 import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
 import { auth, logout } from './lib/firebase';
 import { onAuthStateChanged, type User } from 'firebase/auth';
@@ -37,8 +39,29 @@ const publishLabels: Record<PublishingStatus, string> = {
   pending: 'Chờ xử lý', processing: 'Đang xử lý', published: 'Đã đăng', needs_action: 'Cần xử lý',
   manual_pending: 'Chờ đăng thủ công', failed: 'Thất bại', skipped: 'Bỏ qua',
 };
+function capabilityLabel(value: string) {
+  return ({ verified: 'Đã xác minh', available: 'Khả dụng', partial: 'Khả dụng một phần',
+    unavailable: 'Không khả dụng', unverified: 'Chưa xác minh', not_tested: 'Chưa kiểm tra',
+  } as Record<string, string>)[value] ?? 'Chưa xác minh';
+}
+function connectorLimitationText(item: ConnectorRecord) {
+  const limitation = item.limitations[0];
+  if (!limitation) return 'Chưa ghi nhận giới hạn thực tế.';
+  if ((limitation.match(/\?/g) ?? []).length > 2) {
+    return 'Chưa cấu hình credential/API production; tiếp tục vận hành thủ công.';
+  }
+  return limitation;
+}
 
 function pageTitle(page: PageKey) { return nav.find((item) => item.key === page)?.label ?? ''; }
+function contentStatusLabel(status: string) {
+  return ({
+    idea: 'Ý tưởng', draft: 'Bản nháp', generating: 'Đang tạo Content', in_production: 'Đang sản xuất',
+    post_production: 'Chờ hậu kỳ', awaiting_copy: 'Chờ tạo mô tả', review: 'Chờ duyệt', approved: 'Đã duyệt',
+    ready_to_publish: 'Sẵn sàng đăng', scheduled: 'Đã lên lịch', published: 'Đã đăng',
+    partially_published: 'Đã đăng một phần', archived: 'Lưu trữ', test: 'Test',
+  } as Record<string, string>)[status] ?? status;
+}
 
 export default function App() {
   const [page, setPage] = useState<PageKey>('overview');
@@ -73,7 +96,7 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-      <div className="brand"><div className="brand-mark"><ShieldCheck /></div><div><strong>ANCV</strong><span>Marketing AI OS</span></div></div>
+      <div className="brand"><img src={ancvLogo} alt="An Ninh Cảnh Vệ - Security Expert"/><span>Marketing AI OS</span></div>
       <nav>{nav.map(({ key, label, icon: Icon }) => <button key={key} className={page === key ? 'active' : ''} onClick={() => openPage(key)}><Icon size={18}/><span>{label}</span>{key === 'connectors' && <i>8</i>}</button>)}</nav>
       <div className="sidebar-foot"><Sparkles size={18}/><div><strong>Core ổn định</strong><small>Connector là plugin</small></div></div>
     </aside>
@@ -84,7 +107,7 @@ export default function App() {
         <div><p>QUẢN TRỊ MARKETING AI AGENT - ANCV</p><span>{pageTitle(page)}</span></div>
         <div className="account">
           {!firebaseConfigured && <Badge tone="warning">Chế độ cấu hình</Badge>}
-          {user ? <button onClick={() => logout()}><span>{user.email}</span></button> : <button onClick={async () => { try { await loginWithGoogle(); } catch { setToast('Không thể đăng nhập Google. Hãy kiểm tra quyền tài khoản.'); } }}><LogIn size={17}/><span>Đăng nhập Google</span></button>}
+          {user ? <button onClick={() => logout()}><strong className="account-avatar">{user.email?.slice(0, 1).toUpperCase()}</strong><span>{user.email}</span></button> : <button onClick={async () => { try { await loginWithGoogle(); } catch { setToast('Không thể đăng nhập Google. Hãy kiểm tra quyền tài khoản.'); } }}><LogIn size={17}/><span>Đăng nhập Google</span></button>}
         </div>
       </header>
       <section className="workspace">
@@ -105,7 +128,7 @@ export default function App() {
 }
 
 function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
-  return <section className="signin-panel"><div className="brand-mark"><ShieldCheck/></div><span className="eyebrow">KHU VỰC QUẢN TRỊ ANCV</span><h1>Đăng nhập để điều hành Marketing OS</h1><p>Chỉ tài khoản đã được Admin cấp vai trò mới có thể đọc hoặc thay đổi dữ liệu.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Vai trò quản trị được cấp bằng Firebase Authentication và Firestore.</small></section>;
+  return <section className="signin-panel"><img className="signin-logo" src={ancvLogo} alt="An Ninh Cảnh Vệ - Security Expert"/><span className="eyebrow">QUẢN TRỊ MARKETING AI AGENT</span><h1>Đăng nhập Marketing AI OS</h1><p>An Ninh Cảnh Vệ · Khu vực làm việc dành cho tài khoản đã được cấp quyền.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Vai trò được quản lý bằng Firebase Authentication và Firestore.</small></section>;
 }
 
 function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; aiUsage: { requests: number; totalTokens: number; images: number }; onNavigate: (page: PageKey) => void }) {
@@ -116,7 +139,7 @@ function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: Con
     { platform: 'search_console' as const, label: 'Search Console' },
   ].map((source) => ({ ...source, connector: connectors.find((item) => item.platform === source.platform) }));
   return <>
-    <div className="hero-row"><div><Badge tone="success">Core Marketing OS</Badge><h1>Điều hành Content rõ ràng,<br/><em>không bị khóa bởi API.</em></h1><p>Quản lý sản xuất, duyệt, đăng đa nền tảng và dữ liệu Marketing trong một luồng an toàn.</p></div><div className="hero-orbit"><span>CORE</span><i className="orbit-one">Content</i><i className="orbit-two">KPI</i><i className="orbit-three">API</i></div></div>
+    <div className="hero-row"><div><Badge tone="info">Core Marketing OS</Badge><h1>Điều hành Content rõ ràng,<br/><em>không bị khóa bởi API.</em></h1><p>Quản lý sản xuất, duyệt, đăng đa nền tảng và dữ liệu Marketing trong một luồng an toàn.</p></div><div className="hero-orbit"><span><img src={ancvIcon} alt=""/></span><i className="orbit-one">Content</i><i className="orbit-two">KPI</i><i className="orbit-three">API</i></div></div>
     <div className="stats-grid">
       <StatCard label="Tổng Content" value={contents.length} note="Video & bài viết" icon={FileText} tone="green"/>
       <StatCard label="Đã xuất bản" value={published} note="Bao gồm đăng một phần" icon={Check} tone="blue"/>
@@ -136,7 +159,7 @@ function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: Con
     </section>
     <div className="two-columns">
       <section className="panel"><div className="panel-head"><div><span className="eyebrow">PIPELINE GẦN ĐÂY</span><h2>Content đang vận hành</h2></div><button className="text-button" onClick={() => onNavigate('video')}>Xem tất cả <ChevronRight size={16}/></button></div>
-        <div className="content-list">{contents.slice(0,4).map((item) => <div className="content-row" key={item.id}><div className={`type-icon ${item.type}`} >{item.type === 'video' ? <Video/> : <FileText/>}</div><div className="grow"><strong>{item.title}</strong><span>{item.contentId}</span></div><Badge tone={item.status === 'partially_published' ? 'warning' : item.status === 'published' ? 'success' : 'info'}>{item.status === 'partially_published' ? 'Đã đăng một phần' : item.status === 'review' ? 'Chờ duyệt' : item.status}</Badge></div>)}</div>
+        <div className="content-list">{contents.slice(0,4).map((item) => <div className="content-row" key={item.id}><div className={`type-icon ${item.type}`} >{item.type === 'video' ? <Video/> : <FileText/>}</div><div className="grow"><strong>{item.title}</strong><span>{item.contentId}</span></div><Badge tone={item.status === 'partially_published' ? 'warning' : item.status === 'published' ? 'success' : 'info'}>{contentStatusLabel(item.status)}</Badge></div>)}</div>
       </section>
       <section className="panel"><div className="panel-head"><div><span className="eyebrow">CONNECTOR LAYER</span><h2>Tình trạng kết nối</h2></div><button className="text-button" onClick={() => onNavigate('connectors')}>Quản lý <ChevronRight size={16}/></button></div>
         <div className="connector-mini">{connectors.slice(0,6).map((item) => <div key={item.id}><span className={`platform-dot ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><strong>{platformLabels[item.platform]}</strong><small>{connectorStatusVi[item.status]}</small></div><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></div>)}</div>
@@ -203,7 +226,7 @@ function ConnectorsPage({ connectors, onToast }: { connectors: ConnectorRecord[]
     catch (error) { onToast(error instanceof Error ? error.message : 'Feasibility test thất bại.'); }
     finally { setTesting(null); }
   };
-  return <><div className="page-heading"><div><span className="eyebrow">API FEASIBILITY</span><h1>Kết nối</h1><p>Chỉ bật tự động sau khi OAuth, quyền, request nghiệp vụ và refresh token đều PASS thực tế.</p></div></div><div className="connector-grid">{connectors.map((item) => <article className="connector-card" key={item.id}><div className="connector-title"><span className={`platform-dot large ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><h3>{platformLabels[item.platform]}</h3><span>Kiểm tra gần nhất: {item.testedAt ? new Date(item.testedAt).toLocaleString('vi-VN') : 'Chưa có'}</span></div><Badge tone={item.status === 'available' ? 'success' : 'warning'}>{connectorStatusVi[item.status]}</Badge></div><dl><div><dt>OAuth</dt><dd>{connectorStatusVi[item.authenticationStatus]}</dd></div><div><dt>Publishing</dt><dd>{item.publishingCapability === 'unverified' ? 'Chưa xác minh' : item.publishingCapability}</dd></div><div><dt>Analytics</dt><dd>{item.analyticsCapability === 'unverified' ? 'Chưa xác minh' : item.analyticsCapability}</dd></div><div><dt>Mode</dt><dd><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></dd></div></dl><div className="limitation"><CircleAlert size={16}/><span>{item.limitations[0]}</span></div><button className="test-button" disabled={testing === item.platform} onClick={() => run(item.platform)}><Activity size={16}/>{testing === item.platform ? 'Đang kiểm tra…' : 'Test lại'}</button></article>)}</div></>;
+  return <><div className="page-heading"><div><span className="eyebrow">API FEASIBILITY</span><h1>Kết nối</h1><p>Chỉ bật tự động sau khi OAuth, quyền, request nghiệp vụ và refresh token đều PASS thực tế.</p></div></div><div className="connector-grid">{connectors.map((item) => <article className="connector-card" key={item.id}><div className="connector-title"><span className={`platform-dot large ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><h3>{platformLabels[item.platform]}</h3><span>Kiểm tra gần nhất: {item.testedAt ? new Date(item.testedAt).toLocaleString('vi-VN') : 'Chưa có'}</span></div><Badge tone={item.status === 'available' ? 'success' : item.status === 'not_tested' ? 'neutral' : 'warning'}>{connectorStatusVi[item.status]}</Badge></div><dl><div><dt>OAuth</dt><dd>{connectorStatusVi[item.authenticationStatus]}</dd></div><div><dt>Publishing</dt><dd>{capabilityLabel(item.publishingCapability)}</dd></div><div><dt>Analytics</dt><dd>{capabilityLabel(item.analyticsCapability)}</dd></div><div><dt>Mode</dt><dd><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></dd></div></dl><div className="limitation"><CircleAlert size={16}/><span>{connectorLimitationText(item)}</span></div><button className="test-button" disabled={testing === item.platform} onClick={() => run(item.platform)}><Activity size={16}/>{testing === item.platform ? 'Đang kiểm tra…' : 'Test lại'}</button></article>)}</div></>;
 }
 
 function HealthPage({ connectors, localAgents }: { connectors: ConnectorRecord[]; localAgents: LocalAgentRecord[] }) {
@@ -223,13 +246,13 @@ function HealthPage({ connectors, localAgents }: { connectors: ConnectorRecord[]
     Publishing: connectors.filter((item) => !['ga4','search_console'].includes(item.platform)).map((item) => ({ key: item.platform, label: platformLabels[item.platform], status: item.mode === 'manual' ? 'manual' : 'partial', checkedAt: now })),
     Analytics: [{ key: 'ga4', label: 'GA4', status: connectors.find((item) => item.platform === 'ga4')?.status === 'available' ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'gsc', label: 'Search Console', status: connectors.find((item) => item.platform === 'search_console')?.status === 'available' ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'social', label: 'Social Analytics', status: 'configuration_required', checkedAt: now }],
     Automation: [
-      { key: 'local-agent', label: 'ANCV Local Agent', status: agentOnline ? 'operational' : 'error', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? `${agent?.machineName} — Online` : 'Offline hoặc heartbeat quá hạn' },
-      { key: 'browser-bridge', label: 'Browser Bridge', status: agentOnline && agent?.bridgeStatus === 'connected' ? 'operational' : 'configuration_required', checkedAt: agent?.lastSeen ?? now, detail: agent?.bridgeStatus === 'connected' ? `Connected — ${agent.currentProfileId ?? 'profile'}` : 'Chưa có profile kết nối' },
-      { key: 'flow', label: 'Google Flow', status: agentOnline ? 'operational' : 'error', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? 'Available / Experimental — Playwright + local-first' : 'Local Agent offline; manual fallback vẫn khả dụng' },
+      { key: 'local-agent', label: 'ANCV Local Agent', status: agentOnline ? 'operational' : 'error', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? `${agent?.machineName} · Sẵn sàng` : 'Offline hoặc heartbeat quá hạn' },
+      { key: 'browser-bridge', label: 'Browser Bridge', status: agentOnline && agent?.bridgeStatus === 'connected' ? 'operational' : 'configuration_required', checkedAt: agent?.lastSeen ?? now, detail: agent?.bridgeStatus === 'connected' ? 'Đã kết nối Chrome Profile' : 'Chưa kết nối Chrome Profile' },
+      { key: 'flow', label: 'Google Flow', status: agentOnline ? 'operational' : 'manual', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? 'Sẵn sàng sử dụng với quy trình local-first' : 'Local Agent offline; tiếp tục bằng quy trình thủ công' },
     ],
-  }), [agent?.bridgeStatus, agent?.currentProfileId, agent?.lastSeen, agent?.machineName, agentOnline, backend, connectors, now]);
+  }), [agent?.bridgeStatus, agent?.lastSeen, agent?.machineName, agentOnline, backend, connectors, now]);
   const healthVi: Record<HealthItem['status'], string> = { operational: 'Hoạt động', partial: 'Khả dụng một phần', configuration_required: 'Cần cấu hình', pending_review: 'Chờ phê duyệt', error: 'Lỗi', manual: 'Thủ công' };
-  return <><div className="page-heading"><div><span className="eyebrow">SAFE FAILURE</span><h1>Tình trạng hệ thống</h1><p>Mỗi thành phần được giám sát độc lập; lỗi connector không làm Core dừng.</p></div><div className="health-summary"><span></span>Core đang hoạt động</div></div><div className="health-groups">{Object.entries(groups).map(([name, items]) => <section className="panel" key={name}><div className="panel-head"><h2>{name}</h2><small>Dữ liệu cập nhật lần cuối: {new Date().toLocaleTimeString('vi-VN')}</small></div>{items.map((item) => <div className="health-row" key={item.key}><div className={`health-indicator ${item.status}`}></div><div><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</div><Badge tone={item.status === 'operational' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{healthVi[item.status]}</Badge></div>)}</section>)}</div></>;
+  return <><div className="page-heading"><div><span className="eyebrow">SAFE FAILURE</span><h1>Tình trạng hệ thống</h1><p>Mỗi thành phần được giám sát độc lập; lỗi connector không làm Core dừng.</p></div><div className="health-summary"><span></span>Core đang hoạt động</div></div><div className="health-groups">{Object.entries(groups).map(([name, items]) => <section className="panel" key={name}><div className="panel-head"><h2>{name}</h2><small>Dữ liệu cập nhật lần cuối: {new Date().toLocaleTimeString('vi-VN')}</small></div>{items.map((item) => <div className="health-row" key={item.key}><div className={`health-indicator ${item.status}`}></div><div><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</div><div className="health-badges">{item.key === 'flow' && item.status === 'operational' ? <><Badge tone="success">Sẵn sàng</Badge><Badge tone="warning">Experimental</Badge></> : item.key === 'local-agent' ? <Badge tone={item.status === 'operational' ? 'success' : 'danger'}>{item.status === 'operational' ? 'Online' : 'Offline'}</Badge> : item.key === 'browser-bridge' ? <Badge tone={item.status === 'operational' ? 'success' : 'neutral'}>{item.status === 'operational' ? 'Đã kết nối' : 'Chưa kết nối'}</Badge> : <Badge tone={item.status === 'operational' ? 'success' : item.status === 'error' ? 'danger' : item.status === 'configuration_required' ? 'neutral' : 'warning'}>{healthVi[item.status]}</Badge>}</div></div>)}</section>)}</div></>;
 }
 
 function PlaceholderPage({ page, contents, connectors }: { page: PageKey; contents: ContentRecord[]; connectors: ConnectorRecord[] }) {
