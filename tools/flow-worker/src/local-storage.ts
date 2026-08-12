@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, mkdir, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, open, stat, unlink } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
 import type { FlowJobRecord, MediaAssetRecord } from '@ancv/shared';
 import { firestore } from './firebase.js';
@@ -36,6 +36,14 @@ export async function persistLocalVideo(job: FlowJobRecord, temporaryPath: strin
 
   const sourceInfo = await stat(temporaryPath);
   if (!sourceInfo.isFile() || sourceInfo.size < 1_024) throw new Error('LOCAL_VIDEO_TEMP_INVALID');
+  const handle = await open(temporaryPath, 'r');
+  try {
+    const header = Buffer.alloc(12);
+    await handle.read(header, 0, header.length, 0);
+    if (extension === '.mp4' && header.subarray(4, 8).toString('ascii') !== 'ftyp') throw new Error('LOCAL_VIDEO_MP4_SIGNATURE_INVALID');
+  } finally {
+    await handle.close();
+  }
   await copyFile(temporaryPath, destination);
   const destinationInfo = await stat(destination);
   if (!destinationInfo.isFile() || destinationInfo.size !== sourceInfo.size) throw new Error('LOCAL_VIDEO_COPY_VERIFY_FAILED');

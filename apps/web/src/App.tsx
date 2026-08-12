@@ -225,7 +225,7 @@ function HealthPage({ connectors, localAgents }: { connectors: ConnectorRecord[]
     Automation: [
       { key: 'local-agent', label: 'ANCV Local Agent', status: agentOnline ? 'operational' : 'error', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? `${agent?.machineName} — Online` : 'Offline hoặc heartbeat quá hạn' },
       { key: 'browser-bridge', label: 'Browser Bridge', status: agentOnline && agent?.bridgeStatus === 'connected' ? 'operational' : 'configuration_required', checkedAt: agent?.lastSeen ?? now, detail: agent?.bridgeStatus === 'connected' ? `Connected — ${agent.currentProfileId ?? 'profile'}` : 'Chưa có profile kết nối' },
-      { key: 'flow', label: 'Flow Worker Playwright', status: 'manual', checkedAt: now, detail: 'Experimental fallback — không bị loại bỏ' },
+      { key: 'flow', label: 'Google Flow', status: agentOnline ? 'operational' : 'error', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? 'Available / Experimental — Playwright + local-first' : 'Local Agent offline; manual fallback vẫn khả dụng' },
     ],
   }), [agent?.bridgeStatus, agent?.currentProfileId, agent?.lastSeen, agent?.machineName, agentOnline, backend, connectors, now]);
   const healthVi: Record<HealthItem['status'], string> = { operational: 'Hoạt động', partial: 'Khả dụng một phần', configuration_required: 'Cần cấu hình', pending_review: 'Chờ phê duyệt', error: 'Lỗi', manual: 'Thủ công' };

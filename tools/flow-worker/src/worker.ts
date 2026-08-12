@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, rename, stat, unlink } from 'node:fs/promises';
-import { dirname, extname } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import type { FlowAccountRecord, FlowJobRecord } from '@ancv/shared';
 import { connectAccountContext } from './browser.js';
-import { ensureLocalDirectories, flowConfig, pathInsideDataRoot } from './config.js';
+import { ensureLocalDirectories, flowConfig, loadLocalAgentConfig, pathInsideDataRoot, pathInsideWorkspace } from './config.js';
 import { firestore, storageBucket } from './firebase.js';
 import { detectGoogleAccountEmail, findDownloadControl, findNewFlowOutputIds, getFlowOutputIds, getStableFlowOutputIds, inspectFlowUi, isSingleOutputSelected, openExistingFlowProject, openFlowOutputById, waitForFlowUi } from './flow-ui.js';
 import { persistLocalVideo } from './local-storage.js';
@@ -13,6 +13,11 @@ const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(reso
 export function findNewCompletedDownloads(before: string[], current: string[]): string[] {
   const baseline = new Set(before);
   return current.filter((fileName) => !baseline.has(fileName) && !fileName.endsWith('.crdownload'));
+}
+
+export function flowJobTempRelativePath(job: FlowJobRecord): string {
+  const scene = String(job.sceneNumber).padStart(2, '0');
+  return `.tmp/flow/${job.id}/${job.contentId}_S${scene}_T01.mp4`;
 }
 
 async function downloadThroughFlowUi(
@@ -29,24 +34,37 @@ async function downloadThroughFlowUi(
       if (error.code !== 'ENOENT') throw error;
     });
   const baseline = await readdir(downloadDirectory);
+  if (baseline.length) throw new Error('FLOW_DOWNLOAD_TEMP_NOT_EMPTY');
   const cdp = await page.context().newCDPSession(page);
+  let playwrightEvent = false;
+  let cdpStarted = false;
+  let cdpCompleted = false;
+  page.once('download', () => { playwrightEvent = true; });
+  cdp.on('Browser.downloadWillBegin', () => { cdpStarted = true; });
+  cdp.on('Browser.downloadProgress', (event) => {
+    if (event.state === 'completed') cdpCompleted = true;
+  });
   try {
     await cdp.send('Browser.setDownloadBehavior', {
       behavior: 'allow',
       downloadPath: downloadDirectory,
       eventsEnabled: true,
     });
-    await control.locator.click({ force: true, timeout: 15_000 });
+    await control.locator.click({ timeout: 15_000 });
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
       await page.waitForTimeout(1_000);
       const candidates = findNewCompletedDownloads(baseline, await readdir(downloadDirectory));
       if (candidates.length > 1) throw new Error(`FLOW_DOWNLOAD_AMBIGUOUS:${candidates.length}`);
       if (candidates.length === 1) {
-        const downloadedPath = pathInsideDataRoot('downloads', candidates[0]!);
+        const downloadedPath = join(downloadDirectory, candidates[0]!);
         const details = await stat(downloadedPath);
         if (!details.isFile() || details.size < 1_024) continue;
-        await rename(downloadedPath, targetPath);
+        if (downloadedPath !== targetPath) await rename(downloadedPath, targetPath);
+        console.log(JSON.stringify({
+          event: 'flow_download_ui_completed', playwrightEvent, cdpStarted, cdpCompleted,
+          fileName: targetPath.split(/[\\/]/).at(-1), bytes: details.size,
+        }));
         return;
       }
     }
@@ -193,8 +211,12 @@ export async function processPlaywrightJob(job: FlowJobRecord): Promise<void> {
       }
     }
     if (!downloadControl) { await failJob(job, 'Không xác định được output/download trong timeout; không Generate lại.'); return; }
+    await page.setViewportSize({ width: 1_440, height: 900 });
+    await page.waitForTimeout(500);
+    downloadControl = await findDownloadControl(page);
+    if (!downloadControl) throw new Error('FLOW_DOWNLOAD_CONTROL_LOST_AFTER_VIEWPORT_FIX');
     await downloadControl.locator.scrollIntoViewIfNeeded();
-    downloadedPath = pathInsideDataRoot('downloads', `${job.contentId}_S${String(job.sceneNumber).padStart(2, '0')}_T01.mp4`);
+    downloadedPath = pathInsideWorkspace(loadLocalAgentConfig(), flowJobTempRelativePath(job));
     await downloadThroughFlowUi(page, downloadControl, downloadedPath);
     if (job.storageStrategy === 'firebase') {
       const uploaded = await uploadVideo(job, downloadedPath);

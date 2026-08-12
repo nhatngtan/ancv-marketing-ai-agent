@@ -35,6 +35,7 @@ Task Scheduler chỉ chạy một instance. Heartbeat được ghi vào `localAg
 - Sai account/project, mất login, verification, locator mơ hồ, không phải `x1`, download lỗi hoặc bridge mất kết nối đều chuyển `needs_manual`.
 - Sau UAT 2D.3C, Browser Bridge chỉ dùng cho Profile Manager, session, navigation và read-only inspection; Generate fail-closed vì CDP mouse không tạo acceptance signal. Job mới được route sang `playwright_fallback`; local-first storage strategy giữ nguyên.
 - UAT 2D.4 đã chứng minh Dashboard → Local Agent → Playwright Generate đúng một lần và phát hiện đúng một output mới. Bước UI Download timeout, vì vậy trạng thái vẫn **EXPERIMENTAL / PARTIAL** và job chuyển `needs_manual`; xem [UAT_PHASE_2D4.md](UAT_PHASE_2D4.md).
+- UAT 2D.4A recovery đã xác định viewport overlay là nguyên nhân Download timeout. Viewport 1440×900 + trusted locator click đã tạo đủ Playwright/CDP/filesystem evidence, lưu MP4 local và khôi phục Job/Scene `succeeded`; trạng thái **EXPERIMENTAL / AVAILABLE**. Xem [UAT_PHASE_2D4A.md](UAT_PHASE_2D4A.md).
 - File tạm chỉ xóa sau khi copy, kích thước và SHA-256 đã được xác minh và metadata Firestore đã commit.
 
 ## Bàn giao

@@ -28,6 +28,8 @@ Ngày 2026-08-12: Local Agent/Task Scheduler, heartbeat, dedicated Chrome profil
 
 Ngày 2026-08-12 (2D.4): production Dashboard đã route deterministic sang Playwright, Generate đúng một lần và phát hiện đúng một output mới. UI Download không tạo file trong timeout 60 giây; không dùng private API, job dừng `needs_manual`, asset/cloud/temp đều bằng 0. Google Flow giữ **EXPERIMENTAL / PARTIAL**; xem [UAT_PHASE_2D4.md](UAT_PHASE_2D4.md).
 
+Ngày 2026-08-12 (2D.4A): recovery existing output đã PASS bằng UI Download thật sau khi sửa viewport overlay; đúng một MP4 local/asset, Job và Scene `succeeded`, Firebase Storage/duplicate bằng 0, temp cleanup PASS. Google Flow là **EXPERIMENTAL / AVAILABLE** và development đóng tại đây; xem [UAT_PHASE_2D4A.md](UAT_PHASE_2D4A.md).
+
 ## Giai đoạn 3 — Distribution Connector production
 
 Implement phần PASS qua `PublishingProvider`/`AnalyticsProvider`; token trong Secret Manager; scheduler chỉ gọi connector đủ trạng thái. Test revoke token, quota, partial failure và idempotent replay.

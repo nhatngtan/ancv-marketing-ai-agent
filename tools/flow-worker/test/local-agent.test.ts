@@ -3,7 +3,7 @@ import type { FlowJobRecord } from '@ancv/shared';
 import { localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
-import { findNewCompletedDownloads } from '../src/worker.js';
+import { findNewCompletedDownloads, flowJobTempRelativePath } from '../src/worker.js';
 
 const config: LocalAgentConfig = {
   agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
@@ -39,5 +39,10 @@ describe('Flow download detection', () => {
       ['old.mp4'],
       ['old.mp4', 'new.mp4.crdownload', 'new.mp4'],
     )).toEqual(['new.mp4']);
+  });
+
+  it('uses a dedicated workspace temp directory per job', () => {
+    const job = { id: 'scene-01', contentId: 'ANCV-VID-2026-004', sceneNumber: 2 } as FlowJobRecord;
+    expect(flowJobTempRelativePath(job)).toBe('.tmp/flow/scene-01/ANCV-VID-2026-004_S02_T01.mp4');
   });
 });
