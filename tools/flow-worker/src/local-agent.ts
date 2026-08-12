@@ -447,18 +447,38 @@ export class LocalAgent {
       const clicked = (await this.bridge.sendCommand(
         job.flowAccountId,
         "click_generate",
-        {},
+        { baselineOutputIds: [...baselineIds] },
         30_000,
-      )) as { clicked?: boolean; matches?: number };
-      if (!clicked.clicked || clicked.matches !== 1)
+      )) as {
+        clicked?: boolean;
+        dispatched?: boolean;
+        matches?: number;
+        inputMethod?: string;
+        acceptanceSignal?: boolean;
+        generationRequestObserved?: boolean;
+        responseStatus?: number | null;
+        processingObserved?: boolean;
+        debuggerDetached?: boolean;
+      };
+      generateClicked = Boolean(clicked.dispatched);
+      if (generateClicked) {
+        await firestore.collection("flowJobs").doc(job.id).update({
+          generateClicks: 1,
+          generateInputMethod: clicked.inputMethod ?? "cdp_mouse",
+          generationAcceptanceSignal: Boolean(clicked.acceptanceSignal),
+          generationRequestObserved: Boolean(clicked.generationRequestObserved),
+          generationResponseStatus: clicked.responseStatus ?? null,
+          processingObserved: Boolean(clicked.processingObserved),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (!clicked.clicked || !clicked.dispatched || clicked.matches !== 1)
         throw new Error(
           `FLOW_GENERATE_AMBIGUOUS matches=${clicked.matches ?? 0}`,
         );
-      generateClicked = true;
-      await firestore
-        .collection("flowJobs")
-        .doc(job.id)
-        .update({ generateClicks: 1, updatedAt: new Date().toISOString() });
+      if (!clicked.debuggerDetached) throw new Error("FLOW_DEBUGGER_NOT_DETACHED");
+      if (!clicked.acceptanceSignal)
+        throw new Error("FLOW_GENERATE_NOT_ACCEPTED_NO_RETRY");
 
       const deadline = Date.now() + 15 * 60_000;
       let output: FlowInspection | null = null;

@@ -246,6 +246,126 @@ async function runInFlow(func, args = []) {
   return result[0]?.result;
 }
 
+function nativeInputTarget(kind) {
+  const visible = (element) => {
+    const style = window.getComputedStyle(element); const rect = element.getBoundingClientRect();
+    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  };
+  const label = (element) => `${element.getAttribute('aria-label') ?? ''} ${element.textContent ?? ''}`.replace(/\s+/g, ' ').trim();
+  const visibleButtons = [...document.querySelectorAll('button')].filter(visible);
+  const candidates = kind === 'config'
+    ? visibleButtons.filter((element) => /^video\b.*x1$/i.test(label(element)))
+    : [...document.querySelectorAll('button,[role="button"]')].filter(visible)
+      .filter((element) => /^(arrow_forward\s*)?(generate|generate video|tạo|tạo video)$/i.test(label(element)));
+  if (candidates.length !== 1) return {
+    ready: false, matches: candidates.length, reason: 'TARGET_AMBIGUOUS',
+    diagnosticLabels: kind === 'config' ? visibleButtons.map(label).filter((value) => /video|x1/i.test(value)).slice(0, 10) : undefined,
+  };
+  const target = candidates[0];
+  const disabled = target instanceof HTMLButtonElement ? target.disabled : target.getAttribute('aria-disabled') === 'true';
+  const rect = target.getBoundingClientRect();
+  const x = rect.left + rect.width / 2; const y = rect.top + rect.height / 2;
+  const top = document.elementFromPoint(x, y);
+  const unobstructed = Boolean(top && (top === target || target.contains(top)));
+  return { ready: !disabled && unobstructed, matches: 1, disabled, unobstructed, x, y };
+}
+
+function configMenuOpen() {
+  const visible = (element) => {
+    const style = window.getComputedStyle(element); const rect = element.getBoundingClientRect();
+    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  };
+  return [...document.querySelectorAll('[role="menu"]')].some(visible)
+    || [...document.querySelectorAll('[role="tab"]')].some((element) => visible(element) && /^x1$/i.test((element.textContent ?? '').trim()));
+}
+
+function generateAcceptanceState(baselineOutputIds) {
+  const inspection = inspectFlowPage();
+  const baseline = new Set(Array.isArray(baselineOutputIds) ? baselineOutputIds : []);
+  const newOutputIds = (inspection.outputIds ?? []).filter((id) => !baseline.has(id));
+  const prompt = [...document.querySelectorAll('textarea,[role="textbox"],[contenteditable="true"]')].find(isVisible);
+  const promptValue = prompt instanceof HTMLTextAreaElement || prompt instanceof HTMLInputElement ? prompt.value : prompt?.textContent ?? '';
+  const generate = [...document.querySelectorAll('button,[role="button"]')].filter(isVisible)
+    .find((element) => /^(arrow_forward\s*)?(generate|generate video|tạo|tạo video)$/i.test(controlText(element)));
+  const generateDisabled = generate instanceof HTMLButtonElement ? generate.disabled : generate?.getAttribute('aria-disabled') === 'true';
+  return {
+    accepted: Boolean(inspection.processing || inspection.generationError || newOutputIds.length || !promptValue.trim() || generateDisabled),
+    processing: Boolean(inspection.processing), promptCleared: !promptValue.trim(),
+    generateDisabled: Boolean(generateDisabled), newOutputIds,
+  };
+}
+
+async function dispatchNativeClick(tabId, point) {
+  const debuggee = { tabId };
+  await chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
+  await chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+  await chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+}
+
+async function nativeInputTest() {
+  const tab = await flowTab();
+  if (!tab?.id) throw new Error('FLOW_TAB_NOT_FOUND');
+  const target = await runInFlow(nativeInputTarget, ['config']);
+  if (!target?.ready) return { passed: false, attached: false, detached: true, matches: target?.matches ?? 0, reason: target?.reason ?? 'CONFIG_TARGET_UNSAFE', diagnosticLabels: target?.diagnosticLabels ?? [] };
+  const beforeOpen = await runInFlow(configMenuOpen);
+  let attached = false;
+  let afterOpen = beforeOpen;
+  try {
+    await chrome.debugger.attach({ tabId: tab.id }, '1.3'); attached = true;
+    await dispatchNativeClick(tab.id, target);
+    await sleep(250);
+    afterOpen = await runInFlow(configMenuOpen);
+  } finally {
+    if (attached) await chrome.debugger.detach({ tabId: tab.id });
+  }
+  return { passed: beforeOpen !== afterOpen, attached: true, dispatched: true, detached: true, beforeOpen, afterOpen };
+}
+
+async function nativeGenerate(baselineOutputIds) {
+  const tab = await flowTab();
+  if (!tab?.id) throw new Error('FLOW_TAB_NOT_FOUND');
+  const inspection = await runInFlow(inspectFlowPage);
+  if (inspection?.session !== 'ready' || !inspection.video || !inspection.x1) return { clicked: false, dispatched: false, matches: 0, reason: 'FLOW_GENERATE_PREFLIGHT_UNSAFE' };
+  const target = await runInFlow(nativeInputTarget, ['generate']);
+  if (!target?.ready) return { clicked: false, dispatched: false, matches: target?.matches ?? 0, reason: target?.reason ?? 'GENERATE_TARGET_UNSAFE' };
+  let attached = false; let generationRequestObserved = false; let responseStatus = null;
+  const requestIds = new Set(); const debuggee = { tabId: tab.id };
+  const onEvent = (source, method, params) => {
+    if (source.tabId !== tab.id) return;
+    if (method === 'Network.requestWillBeSent') {
+      try {
+        const url = new URL(params.request?.url ?? '');
+        if (params.request?.method === 'POST' && url.hostname === 'labs.google' && url.pathname.startsWith('/fx/api/') && /generat|create|video|media/i.test(url.pathname)) {
+          generationRequestObserved = true;
+          if (params.requestId) requestIds.add(params.requestId);
+        }
+      } catch { /* Never log request data. */ }
+    }
+    if (method === 'Network.responseReceived' && requestIds.has(params.requestId) && Number.isInteger(params.response?.status)) responseStatus = params.response.status;
+  };
+  try {
+    await chrome.debugger.attach(debuggee, '1.3'); attached = true;
+    chrome.debugger.onEvent.addListener(onEvent);
+    await chrome.debugger.sendCommand(debuggee, 'Network.enable');
+    await dispatchNativeClick(tab.id, target);
+    const deadline = Date.now() + 10_000; let acceptance = null;
+    while (Date.now() < deadline) {
+      await sleep(250);
+      acceptance = await runInFlow(generateAcceptanceState, [baselineOutputIds]);
+      if (acceptance?.accepted || generationRequestObserved) break;
+    }
+    return {
+      clicked: true, dispatched: true, matches: 1, inputMethod: 'cdp_mouse', clickCount: 1,
+      debuggerAttached: true, debuggerDetached: true,
+      acceptanceSignal: Boolean(acceptance?.accepted || generationRequestObserved),
+      generationRequestObserved, responseStatus, processingObserved: Boolean(acceptance?.processing),
+    };
+  } finally {
+    chrome.debugger.onEvent.removeListener(onEvent);
+    if (attached) await chrome.debugger.detach(debuggee);
+  }
+}
+
 async function execute(command) {
   if (command.type === 'open_url') {
     const tabs = await chrome.tabs.query({ url: 'https://labs.google/*' });
@@ -258,7 +378,8 @@ async function execute(command) {
   if (command.type === 'diagnose_flow') return runInFlow(diagnoseFlowPage);
   if (command.type === 'prepare_flow') return runInFlow(prepareFlowPage);
   if (command.type === 'fill_prompt') return runInFlow(fillPrompt, [command.payload.prompt]);
-  if (command.type === 'click_generate') return runInFlow(clickGenerate);
+  if (command.type === 'test_native_input') return nativeInputTest();
+  if (command.type === 'click_generate') throw new Error('FLOW_BRIDGE_GENERATE_DISABLED_USE_PLAYWRIGHT');
   if (command.type === 'open_latest_video') return runInFlow(openLatestVideo);
   if (command.type === 'open_output') return runInFlow(openOutput, [command.payload.outputId]);
   if (command.type === 'download_latest') {

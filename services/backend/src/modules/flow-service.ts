@@ -60,7 +60,7 @@ flowRouter.post('/jobs', async (request, response, next) => {
         id: jobRef.id, contentDocId: input.contentDocId, contentId: content.contentId,
         sceneId: input.sceneId, sceneNumber: scene.sceneNumber, prompt,
         flowAccountId: input.flowAccountId, flowProjectUrl: projectUrl,
-        executionMode: 'local_agent', storageStrategy: 'local_first',
+        executionMode: 'playwright_fallback', storageStrategy: 'local_first',
         status: 'queued', attempt: Number(existing?.attempt ?? 0) + 1, error: null,
         createdAt: existing?.createdAt ?? now, updatedAt: now, createdBy: uid,
       };

@@ -33,7 +33,7 @@ Task Scheduler chỉ chạy một instance. Heartbeat được ghi vào `localAg
 - Một agent, một Chrome, một account, một Scene tại một thời điểm.
 - Ghi `generateIntentAt` trước click; Generate tối đa một lần và không retry nếu kết quả không chắc chắn.
 - Sai account/project, mất login, verification, locator mơ hồ, không phải `x1`, download lỗi hoặc bridge mất kết nối đều chuyển `needs_manual`.
-- Playwright CDP Worker cũ vẫn là fallback; agent mới không lấy job `playwright_fallback` và fallback cũ không lấy job `local_agent`.
+- Sau UAT 2D.3C, Browser Bridge chỉ dùng cho Profile Manager, session, navigation và read-only inspection; Generate fail-closed vì CDP mouse không tạo acceptance signal. Job mới được route sang `playwright_fallback`; local-first storage strategy giữ nguyên.
 - File tạm chỉ xóa sau khi copy, kích thước và SHA-256 đã được xác minh và metadata Firestore đã commit.
 
 ## Bàn giao

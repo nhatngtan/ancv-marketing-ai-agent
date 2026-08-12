@@ -188,6 +188,11 @@ export interface FlowJobRecord extends AuditFields {
   completedAt?: string;
   generateIntentAt?: string;
   generateClicks?: number;
+  generateInputMethod?: 'dom' | 'cdp_mouse';
+  generationAcceptanceSignal?: boolean;
+  generationRequestObserved?: boolean;
+  generationResponseStatus?: number | null;
+  processingObserved?: boolean;
   baselineOutputIds?: string[];
   flowDetailId?: string;
   assetId?: string;
