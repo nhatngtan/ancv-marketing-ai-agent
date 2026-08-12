@@ -21,7 +21,7 @@ service cloud.firestore {
         'contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'connectors',
         'connectorTests', 'socialMetrics', 'websiteMetrics', 'seoMetrics', 'reports',
         'workflowRuns', 'systemAlerts', 'systemSettings', 'aiJobs', 'aiUsage', 'auditLogs',
-        'flowAccounts', 'flowJobs'
+        'flowAccounts', 'flowJobs', 'localAgents', 'localCommands'
       ];
       allow create: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && validAuditOnCreate();
       allow update: if editor() && collectionName in ['contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'reports'] && preservesOwnership();

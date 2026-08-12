@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type CompanyProfile, type ConnectorRecord, type ContentRecord, type ContentType, type FlowAccountRecord, type FlowJobRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type SceneRecord } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type CompanyProfile, type ConnectorRecord, type ContentRecord, type ContentType, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type SceneRecord } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 const demoContents: ContentRecord[] = [{ id: 'demo-video', contentId: 'ANCV-VID-2026-001', type: 'video', title: 'Video mẫu ANCV', topic: 'An ninh doanh nghiệp', body: '', masterScript: 'MASTER SCRIPT được nhập từ bên ngoài hệ thống.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: 'demo-user', status: 'draft', platforms: ['youtube','facebook','tiktok','zalo','linkedin'].map((platform) => ({ platform: platform as Platform, mode: 'manual', status: 'manual_pending' })) }];
@@ -43,6 +43,10 @@ export function subscribeFlowJobs(contentDocId: string, callback: (records: Flow
   if (!firestore) { callback([]); return () => undefined; }
   return onSnapshot(query(collection(firestore, 'flowJobs'), where('contentDocId', '==', contentDocId)), (snapshot) => callback(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as FlowJobRecord))));
 }
+export function subscribeLocalAgents(callback: (records: LocalAgentRecord[]) => void): () => void {
+  if (!firestore) { callback([]); return () => undefined; }
+  return onSnapshot(collection(firestore, 'localAgents'), (snapshot) => callback(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as LocalAgentRecord))));
+}
 export function subscribeMonthlyAIUsage(callback: (summary: { requests: number; totalTokens: number; images: number }) => void): () => void {
   if (!firestore) { callback({ requests: 0, totalTokens: 0, images: 0 }); return () => undefined; }
   const month = new Date().toISOString().slice(0,7);
@@ -68,6 +72,7 @@ export async function breakdownScenes(contentId: string, replaceExisting = false
 export async function regenerateScene(contentId: string, sceneId: string) { return api<{scene:SceneRecord}>(`/v1/ai/content/${contentId}/scenes/${sceneId}/regenerate`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }) }, 120_000); }
 export async function regeneratePrompt(contentId: string, sceneId: string) { return api<{generationPrompt:string}>(`/v1/ai/content/${contentId}/scenes/${sceneId}/prompt`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }) }, 120_000); }
 export async function createFlowJob(contentDocId: string, sceneId: string, flowAccountId: string) { return api<{job:FlowJobRecord}>('/v1/flow/jobs', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, flowAccountId }) }); }
+export async function openSceneFolder(contentDocId: string, sceneId: string) { return api('/v1/flow/local-commands/open-scene-folder', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, agentId: 'ancv-windows-01' }) }); }
 export async function generateArticle(contentId: string, replaceExisting = false) { return api<{article:{title:string;body:string}}>(`/v1/ai/content/${contentId}/article`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function generatePlatformCopy(contentId: string, platform: Platform, replaceExisting = false) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function approvePlatformCopy(contentId: string, platform: Platform) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}/approve`, { method: 'POST', body: '{}' }); }

@@ -6,6 +6,7 @@ import { connectAccountContext } from './browser.js';
 import { ensureLocalDirectories, flowConfig, pathInsideDataRoot } from './config.js';
 import { firestore, storageBucket } from './firebase.js';
 import { countVisibleVideoPreviews, detectGoogleAccountEmail, findDownloadControl, inspectFlowUi, openExistingFlowProject, openLatestVideoDetail, waitForFlowUi } from './flow-ui.js';
+import { persistLocalVideo } from './local-storage.js';
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -23,7 +24,9 @@ async function markInterruptedJobs(): Promise<void> {
 
 async function nextQueuedJob(): Promise<FlowJobRecord | null> {
   const snapshot = await firestore.collection('flowJobs').where('status', '==', 'queued').get();
-  const candidates = snapshot.docs.map((document) => document.data() as FlowJobRecord).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const candidates = snapshot.docs.map((document) => document.data() as FlowJobRecord)
+    .filter((job) => job.executionMode !== 'local_agent')
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const candidate = candidates[0]; if (!candidate) return null;
   const ref = firestore.collection('flowJobs').doc(candidate.id);
   return firestore.runTransaction(async (transaction) => {
@@ -146,9 +149,15 @@ async function processJob(job: FlowJobRecord): Promise<void> {
       await writeFile(downloadedPath, body);
       console.log(JSON.stringify({ event: 'flow_download_api_fallback', jobId: job.id, bytes: body.length }));
     }
-    const uploaded = await uploadVideo(job, downloadedPath);
-    await unlink(downloadedPath); downloadedPath = '';
-    console.log(JSON.stringify({ event: 'flow_job_succeeded', jobId: job.id, accountId: job.flowAccountId, assetId: uploaded.assetId, storagePath: uploaded.storagePath }));
+    if (job.storageStrategy === 'firebase') {
+      const uploaded = await uploadVideo(job, downloadedPath);
+      await unlink(downloadedPath); downloadedPath = '';
+      console.log(JSON.stringify({ event: 'flow_job_succeeded', jobId: job.id, accountId: job.flowAccountId, assetId: uploaded.assetId, storageType: 'firebase', storagePath: uploaded.storagePath }));
+    } else {
+      const localAsset = await persistLocalVideo(job, downloadedPath);
+      downloadedPath = '';
+      console.log(JSON.stringify({ event: 'flow_job_succeeded', jobId: job.id, accountId: job.flowAccountId, assetId: localAsset.id, storageType: 'local', relativePath: localAsset.relativePath }));
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const screenshotPath = pathInsideDataRoot('errors', `${job.id}-${Date.now()}.png`);

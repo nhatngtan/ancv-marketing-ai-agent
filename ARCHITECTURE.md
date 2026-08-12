@@ -46,4 +46,4 @@ AI endpoints yêu cầu Firebase `admin/editor`. Structured output được Open
 
 `MASTER SCRIPT external → AI processing → Human edit/review → Human approval → Ready for distribution`. Không endpoint Giai đoạn 2B nào tự publish social/WordPress.
 
-Flow Worker V1 là process local experimental: Web App tạo `flowJobs` trong Firestore, Worker polling tuần tự, dùng Chrome thật với profile riêng theo `flowAccountId`, rồi Playwright chỉ attach qua CDP localhost sau khi người dùng đã đăng nhập thủ công. Worker generate tối đa một lần, upload Video Raw vào Storage và ghi `mediaAssets`. Profile/session chỉ nằm local ngoài Git/Cloud. Worker failure luôn degrade về Copy Prompt + upload thủ công.
+Flow runtime experimental theo local-first: Web App tạo `flowJobs` trong Firestore → ANCV Local Agent trên Windows → ANCV Browser Bridge loopback → dedicated Chrome profile → Google Flow → local workspace. Firestore chỉ giữ metadata/state; Video Raw mặc định không upload Cloud. Playwright CDP Worker V1 vẫn được giữ làm fallback riêng. Cả hai đều generate tối đa một lần và degrade về Copy Prompt + upload thủ công.

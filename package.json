@@ -13,6 +13,9 @@
     "flow:login": "npm run login -w @ancv/flow-worker --",
     "flow:preflight": "npm run preflight -w @ancv/flow-worker --",
     "flow:worker": "npm run start -w @ancv/flow-worker --",
+    "local:agent": "npm run local-agent -w @ancv/flow-worker --",
+    "local:preflight": "npm run local-preflight -w @ancv/flow-worker --",
+    "local:configure": "npm run local-configure -w @ancv/flow-worker --",
     "youtube:oauth": "node scripts/youtube-oauth-feasibility.mjs",
     "verify": "npm run build -w @ancv/shared && npm run lint && npm run typecheck && npm run test && npm run build"
   },

@@ -10,7 +10,10 @@
     "test": "vitest run --exclude dist/**",
     "login": "tsx src/index.ts login",
     "preflight": "tsx src/index.ts preflight",
-    "start": "tsx src/index.ts worker"
+    "start": "tsx src/index.ts worker",
+    "local-agent": "tsx src/index.ts local-agent",
+    "local-preflight": "tsx src/index.ts local-preflight",
+    "local-configure": "tsx src/index.ts local-configure"
   },
   "dependencies": {
     "@ancv/shared": "workspace:*",

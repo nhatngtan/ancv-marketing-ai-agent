@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   connectorModeVi, connectorStatusVi, type ConnectorRecord, type ContentRecord, type ContentType,
-  type HealthItem, type Platform, type PublishingStatus,
+  type HealthItem, type LocalAgentRecord, type Platform, type PublishingStatus,
 } from '@ancv/shared';
 import { Badge } from './components/Badge';
 import { EmptyState } from './components/EmptyState';
@@ -17,7 +17,7 @@ import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
 import { auth, logout } from './lib/firebase';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { DEFAULT_CONNECTORS } from '@ancv/shared';
-import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, subscribeMonthlyAIUsage, testConnector, updateContent } from './lib/repository';
+import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, subscribeLocalAgents, subscribeMonthlyAIUsage, testConnector, updateContent } from './lib/repository';
 
 type PageKey = 'overview' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
 const nav: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
@@ -50,6 +50,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
   const [aiUsage, setAIUsage] = useState({ requests: 0, totalTokens: 0, images: 0 });
+  const [localAgents, setLocalAgents] = useState<LocalAgentRecord[]>([]);
 
   useEffect(() => {
     if (!auth) return;
@@ -60,6 +61,7 @@ export default function App() {
     return subscribeContents(setContents);
   }, [user]);
   useEffect(() => { if (firebaseConfigured && !user) return; return subscribeMonthlyAIUsage(setAIUsage); }, [user]);
+  useEffect(() => { if (firebaseConfigured && !user) return; return subscribeLocalAgents(setLocalAgents); }, [user]);
   useEffect(() => {
     if (firebaseConfigured && !user) return;
     return subscribeConnectors(setConnectors);
@@ -89,9 +91,9 @@ export default function App() {
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
         {firebaseConfigured && authReady && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
           {page === 'overview' && <Overview contents={contents} connectors={connectors} aiUsage={aiUsage} onNavigate={openPage} />}
-          {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
+          {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} localAgents={localAgents} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
-          {page === 'health' && <HealthPage connectors={connectors}/>} 
+          {page === 'health' && <HealthPage connectors={connectors} localAgents={localAgents}/>}
           {page === 'settings' && <CompanySettings onToast={setToast}/>}
           {['schedule','social','website','seo','reports'].includes(page) && <PlaceholderPage page={page} contents={contents} connectors={connectors}/>}
         </>}
@@ -204,10 +206,14 @@ function ConnectorsPage({ connectors, onToast }: { connectors: ConnectorRecord[]
   return <><div className="page-heading"><div><span className="eyebrow">API FEASIBILITY</span><h1>Kết nối</h1><p>Chỉ bật tự động sau khi OAuth, quyền, request nghiệp vụ và refresh token đều PASS thực tế.</p></div></div><div className="connector-grid">{connectors.map((item) => <article className="connector-card" key={item.id}><div className="connector-title"><span className={`platform-dot large ${item.platform}`}>{platformLabels[item.platform][0]}</span><div><h3>{platformLabels[item.platform]}</h3><span>Kiểm tra gần nhất: {item.testedAt ? new Date(item.testedAt).toLocaleString('vi-VN') : 'Chưa có'}</span></div><Badge tone={item.status === 'available' ? 'success' : 'warning'}>{connectorStatusVi[item.status]}</Badge></div><dl><div><dt>OAuth</dt><dd>{connectorStatusVi[item.authenticationStatus]}</dd></div><div><dt>Publishing</dt><dd>{item.publishingCapability === 'unverified' ? 'Chưa xác minh' : item.publishingCapability}</dd></div><div><dt>Analytics</dt><dd>{item.analyticsCapability === 'unverified' ? 'Chưa xác minh' : item.analyticsCapability}</dd></div><div><dt>Mode</dt><dd><Badge tone="neutral">{connectorModeVi[item.mode]}</Badge></dd></div></dl><div className="limitation"><CircleAlert size={16}/><span>{item.limitations[0]}</span></div><button className="test-button" disabled={testing === item.platform} onClick={() => run(item.platform)}><Activity size={16}/>{testing === item.platform ? 'Đang kiểm tra…' : 'Test lại'}</button></article>)}</div></>;
 }
 
-function HealthPage({ connectors }: { connectors: ConnectorRecord[] }) {
+function HealthPage({ connectors, localAgents }: { connectors: ConnectorRecord[]; localAgents: LocalAgentRecord[] }) {
   const now = new Date().toISOString();
   const [backend, setBackend] = useState<{ status: string; checkedAt: string; dependencies: Record<string, string> } | null>(null);
+  const [heartbeatNow, setHeartbeatNow] = useState(() => Date.now());
   useEffect(() => { fetchBackendHealth().then(setBackend).catch(() => setBackend({ status: 'error', checkedAt: new Date().toISOString(), dependencies: {} })); }, []);
+  useEffect(() => { const timer = window.setInterval(() => setHeartbeatNow(Date.now()), 15_000); return () => window.clearInterval(timer); }, []);
+  const agent = localAgents.find((item) => item.id === 'ancv-windows-01') ?? localAgents[0];
+  const agentOnline = Boolean(agent?.status === 'online' && heartbeatNow - new Date(agent.lastSeen).getTime() < 45_000);
   const groups = useMemo<Record<string, HealthItem[]>>(() => ({
     Core: [
       { key: 'web', label: 'Web App', status: 'operational', checkedAt: now }, { key: 'firebase', label: 'Firebase', status: firebaseConfigured ? 'operational' : 'configuration_required', checkedAt: now },
@@ -216,8 +222,12 @@ function HealthPage({ connectors }: { connectors: ConnectorRecord[] }) {
     AI: [{ key: 'openai', label: 'OpenAI', status: backend?.dependencies.openai === 'operational' ? 'operational' : backend?.dependencies.openai === 'error' ? 'error' : backend?.dependencies.openai === 'configured_untested' ? 'partial' : 'configuration_required', checkedAt: backend?.checkedAt ?? now, detail: backend?.dependencies.openai === 'operational' ? 'Responses API và Image API đã PASS request thật' : backend?.dependencies.openai === 'configured_untested' ? 'Secret đã mount; chờ live smoke test' : 'Cần kiểm tra Secret Manager' }],
     Publishing: connectors.filter((item) => !['ga4','search_console'].includes(item.platform)).map((item) => ({ key: item.platform, label: platformLabels[item.platform], status: item.mode === 'manual' ? 'manual' : 'partial', checkedAt: now })),
     Analytics: [{ key: 'ga4', label: 'GA4', status: connectors.find((item) => item.platform === 'ga4')?.status === 'available' ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'gsc', label: 'Search Console', status: connectors.find((item) => item.platform === 'search_console')?.status === 'available' ? 'operational' : 'configuration_required', checkedAt: now }, { key: 'social', label: 'Social Analytics', status: 'configuration_required', checkedAt: now }],
-    Automation: [{ key: 'flow', label: 'Flow Worker', status: 'manual', checkedAt: now, detail: 'Experimental — manual fallback sẵn sàng' }],
-  }), [backend, connectors, now]);
+    Automation: [
+      { key: 'local-agent', label: 'ANCV Local Agent', status: agentOnline ? 'operational' : 'error', checkedAt: agent?.lastSeen ?? now, detail: agentOnline ? `${agent?.machineName} — Online` : 'Offline hoặc heartbeat quá hạn' },
+      { key: 'browser-bridge', label: 'Browser Bridge', status: agentOnline && agent?.bridgeStatus === 'connected' ? 'operational' : 'configuration_required', checkedAt: agent?.lastSeen ?? now, detail: agent?.bridgeStatus === 'connected' ? `Connected — ${agent.currentProfileId ?? 'profile'}` : 'Chưa có profile kết nối' },
+      { key: 'flow', label: 'Flow Worker Playwright', status: 'manual', checkedAt: now, detail: 'Experimental fallback — không bị loại bỏ' },
+    ],
+  }), [agent?.bridgeStatus, agent?.currentProfileId, agent?.lastSeen, agent?.machineName, agentOnline, backend, connectors, now]);
   const healthVi: Record<HealthItem['status'], string> = { operational: 'Hoạt động', partial: 'Khả dụng một phần', configuration_required: 'Cần cấu hình', pending_review: 'Chờ phê duyệt', error: 'Lỗi', manual: 'Thủ công' };
   return <><div className="page-heading"><div><span className="eyebrow">SAFE FAILURE</span><h1>Tình trạng hệ thống</h1><p>Mỗi thành phần được giám sát độc lập; lỗi connector không làm Core dừng.</p></div><div className="health-summary"><span></span>Core đang hoạt động</div></div><div className="health-groups">{Object.entries(groups).map(([name, items]) => <section className="panel" key={name}><div className="panel-head"><h2>{name}</h2><small>Dữ liệu cập nhật lần cuối: {new Date().toLocaleTimeString('vi-VN')}</small></div>{items.map((item) => <div className="health-row" key={item.key}><div className={`health-indicator ${item.status}`}></div><div><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</div><Badge tone={item.status === 'operational' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{healthVi[item.status]}</Badge></div>)}</section>)}</div></>;
 }

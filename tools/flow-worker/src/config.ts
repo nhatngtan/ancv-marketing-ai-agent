@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir, hostname } from 'node:os';
 import { join, resolve, sep } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const accountPattern = /^[a-z0-9][a-z0-9-]{1,48}$/;
 
@@ -12,6 +13,68 @@ export function validateAccountId(accountId: string): string {
 export function dataRoot(): string {
   const localAppData = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
   return resolve(process.env.FLOW_WORKER_DATA || join(localAppData, 'ANCV', 'flow-worker-data'));
+}
+
+export interface LocalProfileMapping {
+  logicalId: string;
+  kind: 'managed' | 'system';
+  userDataDir: string;
+  profileDirectory?: string;
+  expectedAccount?: string;
+}
+
+export interface LocalAgentConfig {
+  agentId: string;
+  machineName: string;
+  workspaceRoot: string;
+  bridgeHost: '127.0.0.1';
+  bridgePort: number;
+  bridgeToken: string;
+  profiles: LocalProfileMapping[];
+}
+
+export function localAgentConfigPath(): string {
+  const localAppData = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
+  return resolve(localAppData, 'ANCV', 'local-agent', 'config.json');
+}
+
+export function loadLocalAgentConfig(): LocalAgentConfig {
+  const configPath = localAgentConfigPath();
+  if (!existsSync(configPath)) throw new Error(`LOCAL_AGENT_CONFIG_NOT_FOUND:${configPath}`);
+  const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as Partial<LocalAgentConfig>;
+  const workspaceRoot = resolve(String(parsed.workspaceRoot ?? ''));
+  const port = Number(parsed.bridgePort ?? 32187);
+  if (!workspaceRoot || !Number.isInteger(port) || port < 1_024 || port > 65_535) throw new Error('LOCAL_AGENT_CONFIG_INVALID');
+  if (parsed.bridgeHost !== '127.0.0.1') throw new Error('LOCAL_AGENT_BRIDGE_MUST_BIND_LOOPBACK');
+  if (!parsed.bridgeToken || String(parsed.bridgeToken).length < 32) throw new Error('LOCAL_AGENT_BRIDGE_TOKEN_INVALID');
+  return {
+    agentId: validateAccountId(String(parsed.agentId ?? 'ancv-windows-01')),
+    machineName: String(parsed.machineName ?? hostname()),
+    workspaceRoot,
+    bridgeHost: '127.0.0.1',
+    bridgePort: port,
+    bridgeToken: String(parsed.bridgeToken),
+    profiles: Array.isArray(parsed.profiles) ? parsed.profiles.map((profile) => ({
+      logicalId: validateAccountId(profile.logicalId),
+      kind: profile.kind === 'system' ? 'system' : 'managed',
+      userDataDir: resolve(profile.userDataDir),
+      profileDirectory: profile.profileDirectory ? String(profile.profileDirectory) : undefined,
+      expectedAccount: profile.expectedAccount ? String(profile.expectedAccount).toLowerCase() : undefined,
+    })) : [],
+  };
+}
+
+export function pathInsideWorkspace(config: LocalAgentConfig, relativePath: string): string {
+  const normalized = relativePath.replaceAll('\\', '/').replace(/^\/+/, '');
+  if (!normalized || normalized.split('/').some((part) => !part || part === '.' || part === '..')) throw new Error('LOCAL_PATH_INVALID');
+  const root = resolve(config.workspaceRoot);
+  const target = resolve(root, ...normalized.split('/'));
+  if (!target.startsWith(`${root}${sep}`)) throw new Error('LOCAL_PATH_OUTSIDE_WORKSPACE');
+  return target;
+}
+
+export function createBridgeToken(): string {
+  return randomBytes(32).toString('hex');
 }
 
 export function pathInsideDataRoot(...parts: string[]): string {

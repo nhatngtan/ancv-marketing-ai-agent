@@ -22,6 +22,10 @@ Foundation local một job/một profile/một account tại một thời điể
 
 Kết quả 2026-08-11: smoke đầu phát hiện cấu hình mặc định `x2`; sau khi Worker bắt buộc `x1`, strict smoke được phê duyệt riêng đã PASS với đúng một lần Generate, output tăng đúng một, một MP4/Storage object/`mediaAssets`, Scene và Job `succeeded`, không duplicate và file tạm đã cleanup. Trạng thái Flow Worker V1 là **EXPERIMENTAL / AVAILABLE**; Manual Fallback vẫn được giữ và Core không phụ thuộc Flow.
 
+### Giai đoạn 2D.3 — Local Agent + Browser Bridge + Local-first
+
+Ngày 2026-08-12: Local Agent/Task Scheduler, heartbeat, dedicated Chrome profile, loopback Browser Bridge, UI Local/Cloud, open-folder command, Firestore job ownership và default local-first đã PASS. Một smoke Generate được click đúng một lần nhưng Flow không tăng output count trong timeout 15 phút; job dừng `needs_manual`, không retry, không asset và không Firebase upload. Trạng thái **PARTIAL**; xem [UAT_PHASE_2D3.md](UAT_PHASE_2D3.md).
+
 ## Giai đoạn 3 — Distribution Connector production
 
 Implement phần PASS qua `PublishingProvider`/`AnalyticsProvider`; token trong Secret Manager; scheduler chỉ gọi connector đủ trạng thái. Test revoke token, quota, partial failure và idempotent replay.

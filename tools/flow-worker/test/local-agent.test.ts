@@ -1,0 +1,20 @@
+import { describe, expect, it } from 'vitest';
+import type { FlowJobRecord } from '@ancv/shared';
+import { localVideoRelativePath } from '../src/local-storage.js';
+import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
+
+const config: LocalAgentConfig = {
+  agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
+  bridgeHost: '127.0.0.1', bridgePort: 32187, bridgeToken: 'a'.repeat(64), profiles: [],
+};
+
+describe('local-first paths', () => {
+  it('creates deterministic ANCV scene/take names', () => {
+    const job = { contentId: 'ANCV-VID-2026-004', sceneNumber: 2 } as FlowJobRecord;
+    expect(localVideoRelativePath(job, 3)).toBe('Projects/ANCV-VID-2026-004/Video Raw/Scene-02/ANCV-VID-2026-004_S02_T03.mp4');
+  });
+
+  it('rejects traversal outside the workspace', () => {
+    expect(() => pathInsideWorkspace(config, '../secret.txt')).toThrow('LOCAL_PATH_INVALID');
+  });
+});

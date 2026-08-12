@@ -25,6 +25,7 @@ export type PublishingStatus = 'pending' | 'processing' | 'published' | 'needs_a
 export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type FlowAccountStatus = 'ready' | 'needs_login' | 'needs_verification' | 'unavailable';
 export type FlowJobStatus = 'queued' | 'processing' | 'succeeded' | 'needs_manual';
+export type LocalAgentStatus = 'online' | 'offline' | 'starting' | 'error';
 export type AIOperation = 'scene_breakdown' | 'scene_regeneration' | 'flow_prompt' | 'video_social_copy' | 'article_generation' | 'article_platform_copy' | 'image_generation' | 'report_analysis';
 
 export interface AuditFields {
@@ -144,7 +145,9 @@ export interface MediaAssetRecord extends AuditFields {
   contentDocId: string;
   contentId: string;
   kind: 'scene_take' | 'video_final' | 'article_image';
-  storagePath: string;
+  storageType?: 'local' | 'firebase';
+  storagePath?: string;
+  relativePath?: string;
   downloadUrl?: string;
   fileName: string;
   contentType: string;
@@ -156,7 +159,7 @@ export interface MediaAssetRecord extends AuditFields {
   model?: string;
   quality?: string;
   usage?: AIUsageTokens;
-  source?: 'manual_upload' | 'google_flow_worker' | 'openai';
+  source?: 'manual_upload' | 'google_flow_worker' | 'google_flow' | 'openai';
   flowAccountId?: string;
   flowJobId?: string;
 }
@@ -185,6 +188,29 @@ export interface FlowJobRecord extends AuditFields {
   completedAt?: string;
   generateIntentAt?: string;
   assetId?: string;
+  executionMode?: 'local_agent' | 'playwright_fallback';
+  storageStrategy?: 'local_first' | 'firebase';
+  workerInstanceId?: string | number;
+}
+
+export interface LocalAgentRecord extends AuditFields {
+  status: LocalAgentStatus;
+  machineName: string;
+  lastSeen: string;
+  bridgeStatus: 'connected' | 'disconnected';
+  currentProfileId?: string | null;
+  workspaceAvailable: boolean;
+  version: string;
+  limitation?: string | null;
+}
+
+export interface LocalCommandRecord extends AuditFields {
+  status: 'queued' | 'processing' | 'succeeded' | 'needs_manual';
+  agentId: string;
+  command: 'open_folder' | 'open_file';
+  relativePath: string;
+  error?: string | null;
+  completedAt?: string;
 }
 
 export interface AIUsageTokens {
