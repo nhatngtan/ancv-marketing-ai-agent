@@ -1,13 +1,16 @@
 /* eslint-disable react-hooks/set-state-in-effect -- Firestore snapshots intentionally refresh editor drafts. */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowRight,
   Check,
+  ChevronDown,
   Clipboard,
   Copy,
   Download,
   FileImage,
   FolderOpen,
   GripVertical,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Save,
@@ -61,6 +64,60 @@ import {
   uploadMedia,
 } from "../lib/repository";
 
+function AdvancedSection({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <details className={`advanced-section ${className}`}>
+      <summary>
+        <span>{label}</span>
+        <ChevronDown size={16} />
+      </summary>
+      <div className="advanced-section-body">{children}</div>
+    </details>
+  );
+}
+
+function SegmentedControl<T extends string | number>({
+  value,
+  options,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="composer-control">
+      <span>{label}</span>
+      <div className="segmented-control" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            type="button"
+            key={String(option.value)}
+            className={value === option.value ? "active" : ""}
+            aria-pressed={value === option.value}
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const platformLabels: Record<string, string> = {
   youtube: "YouTube",
   tiktok: "TikTok",
@@ -97,6 +154,11 @@ const flowAccountStatusLabels: Record<string, string> = {
   needs_verification: "Cần xác minh",
   unavailable: "Không khả dụng",
 };
+function flowAccountLabel(item: FlowAccountRecord) {
+  return item.email && !item.label.includes(item.email)
+    ? `${item.label} — ${item.email}`
+    : item.label;
+}
 
 export function ContentStudioPage({
   type,
@@ -328,11 +390,8 @@ function StudioDrawer({
           )}
           <section className="approval-bar">
             <div>
-              <strong>Human-in-the-loop</strong>
-              <p>
-                AI không xuất bản. Người dùng phải duyệt trước khi chuyển sang
-                sẵn sàng đăng.
-              </p>
+              <strong>Duyệt Content</strong>
+              <p>Chỉ Content đã duyệt mới có thể chuyển sang sẵn sàng đăng.</p>
             </div>
             <button
               className="secondary"
@@ -345,7 +404,7 @@ function StudioDrawer({
                 )
               }
             >
-              <Check size={15} /> Duyệt
+              <Check size={15} /> Duyệt Content
             </button>
             <button
               className="primary"
@@ -437,6 +496,7 @@ function VideoEditor({
       <section>
         <div className="section-title">
           <div>
+            <span className="step-label">Bước 1</span>
             <h3>MASTER SCRIPT</h3>
             <small>{dirty ? "Đang tự lưu…" : "Đã lưu"}</small>
           </div>
@@ -448,7 +508,7 @@ function VideoEditor({
             <Sparkles size={15} />
             {busy === "breakdown"
               ? "Đang phân tích…"
-              : "Phân chia cảnh bằng AI"}
+              : "Phân tích thành Scene"}
           </button>
         </div>
         <textarea
@@ -465,119 +525,124 @@ function VideoEditor({
           AI không tự viết MASTER SCRIPT. Nút AI chỉ chạy khi bạn chủ động bấm.
         </p>
       </section>
-      <section>
-        <h3>Visual Style & Continuity</h3>
-        <div className="form-grid">
-          <label>
-            Phong cách
-            <input
-              value={style.style ?? ""}
-              onChange={(e) => {
-                setStyle({ ...style, style: e.target.value });
-                touch();
-              }}
-            />
-          </label>
-          <label>
-            Tỷ lệ khung hình
-            <input
-              value={style.aspectRatio ?? ""}
-              placeholder="16:9"
-              onChange={(e) => {
-                setStyle({ ...style, aspectRatio: e.target.value });
-                touch();
-              }}
-            />
-          </label>
-          <label>
-            Ánh sáng
-            <input
-              value={style.lighting ?? ""}
-              onChange={(e) => {
-                setStyle({ ...style, lighting: e.target.value });
-                touch();
-              }}
-            />
-          </label>
-          <label>
-            Camera style
-            <input
-              value={style.cameraStyle ?? ""}
-              onChange={(e) => {
-                setStyle({ ...style, cameraStyle: e.target.value });
-                touch();
-              }}
-            />
-          </label>
-        </div>
-        <label>
-          Continuity instructions
-          <textarea
-            value={style.continuityInstructions ?? ""}
-            onChange={(e) => {
-              setStyle({ ...style, continuityInstructions: e.target.value });
-              touch();
-            }}
-          />
-        </label>
-      </section>
-      <section>
-        <div className="section-title">
-          <h3>Character References</h3>
-          <button
-            className="small-action"
-            onClick={() => {
-              setCharacters([
-                ...characters,
-                { id: crypto.randomUUID(), name: "Nhân vật mới" },
-              ]);
-              touch();
-            }}
-          >
-            <Plus size={14} />
-            Thêm nhân vật
-          </button>
-        </div>
-        {characters.length === 0 ? (
-          <p className="field-help">
-            Không bắt buộc. Thêm khi cần giữ ngoại hình/trang phục nhất quán.
-          </p>
-        ) : (
-          characters.map((character, index) => (
-            <div className="character-card" key={character.id}>
+      <AdvancedSection label="Cài đặt nâng cao">
+        <div className="advanced-block">
+          <h4>Visual Style & Continuity</h4>
+          <div className="form-grid">
+            <label>
+              Phong cách
               <input
-                value={character.name}
+                value={style.style ?? ""}
                 onChange={(e) => {
-                  const next = [...characters];
-                  next[index] = { ...character, name: e.target.value };
-                  setCharacters(next);
+                  setStyle({ ...style, style: e.target.value });
                   touch();
                 }}
               />
-              <textarea
-                value={character.appearance ?? ""}
-                placeholder="Ngoại hình, trang phục, ghi chú"
+            </label>
+            <SegmentedControl
+              label="Tỷ lệ khung hình mặc định"
+              value={style.aspectRatio === "9:16" ? "9:16" : "16:9"}
+              options={[
+                { value: "9:16", label: "9:16" },
+                { value: "16:9", label: "16:9" },
+              ]}
+              onChange={(aspectRatio) => {
+                setStyle({ ...style, aspectRatio });
+                touch();
+              }}
+            />
+            <label>
+              Ánh sáng
+              <input
+                value={style.lighting ?? ""}
                 onChange={(e) => {
-                  const next = [...characters];
-                  next[index] = { ...character, appearance: e.target.value };
-                  setCharacters(next);
+                  setStyle({ ...style, lighting: e.target.value });
                   touch();
                 }}
               />
-              <button
-                onClick={() => {
-                  setCharacters(
-                    characters.filter((item) => item.id !== character.id),
-                  );
+            </label>
+            <label>
+              Camera style
+              <input
+                value={style.cameraStyle ?? ""}
+                onChange={(e) => {
+                  setStyle({ ...style, cameraStyle: e.target.value });
                   touch();
                 }}
-              >
-                <Trash2 size={14} />
-              </button>
+              />
+            </label>
+          </div>
+          <label>
+            Continuity instructions
+            <textarea
+              value={style.continuityInstructions ?? ""}
+              onChange={(e) => {
+                setStyle({ ...style, continuityInstructions: e.target.value });
+                touch();
+              }}
+            />
+          </label>
+        </div>
+        <div className="advanced-block">
+          <div className="section-title">
+            <div>
+              <h4>Character References</h4>
+              <small>Chỉ dùng khi cần giữ nhân vật nhất quán.</small>
             </div>
-          ))
-        )}
-      </section>
+            <button
+              className="small-action"
+              onClick={() => {
+                setCharacters([
+                  ...characters,
+                  { id: crypto.randomUUID(), name: "Nhân vật mới" },
+                ]);
+                touch();
+              }}
+            >
+              <Plus size={14} />
+              Thêm nhân vật
+            </button>
+          </div>
+          {characters.length === 0 ? (
+            <p className="field-help">Chưa có Character Reference.</p>
+          ) : (
+            characters.map((character, index) => (
+              <div className="character-card" key={character.id}>
+                <input
+                  value={character.name}
+                  onChange={(e) => {
+                    const next = [...characters];
+                    next[index] = { ...character, name: e.target.value };
+                    setCharacters(next);
+                    touch();
+                  }}
+                />
+                <textarea
+                  value={character.appearance ?? ""}
+                  placeholder="Ngoại hình, trang phục, ghi chú"
+                  onChange={(e) => {
+                    const next = [...characters];
+                    next[index] = { ...character, appearance: e.target.value };
+                    setCharacters(next);
+                    touch();
+                  }}
+                />
+                <button
+                  aria-label={`Xóa ${character.name}`}
+                  onClick={() => {
+                    setCharacters(
+                      characters.filter((item) => item.id !== character.id),
+                    );
+                    touch();
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </AdvancedSection>
     </>
   );
 }
@@ -777,7 +842,14 @@ function SceneEditor({
             <section className="scene-card" key={scene.id}>
               <div className="scene-card-head">
                 <GripVertical size={16} />
-                <strong>Scene {scene.sceneNumber}</strong>
+                <div className="scene-heading">
+                  <strong>Scene {String(scene.sceneNumber).padStart(2, "0")}</strong>
+                  <input
+                    aria-label={`Tên Scene ${scene.sceneNumber}`}
+                    value={scene.title}
+                    onChange={(e) => patch(index, { title: e.target.value })}
+                  />
+                </div>
                 <Badge
                   tone={scene.status === "approved" ? "success" : "neutral"}
                 >
@@ -797,9 +869,10 @@ function SceneEditor({
                   </Badge>
                 )}
                 <span className="grow" />
-                <button onClick={() => move(index, -1)}>↑</button>
-                <button onClick={() => move(index, 1)}>↓</button>
+                <button aria-label="Di chuyển lên" onClick={() => move(index, -1)}>↑</button>
+                <button aria-label="Di chuyển xuống" onClick={() => move(index, 1)}>↓</button>
                 <button
+                  aria-label="Duplicate Scene"
                   title="Duplicate"
                   onClick={() =>
                     act(
@@ -812,6 +885,7 @@ function SceneEditor({
                   <Copy size={14} />
                 </button>
                 <button
+                  aria-label="Xóa Scene"
                   title="Xóa"
                   onClick={() => {
                     if (window.confirm("Xóa scene này?"))
@@ -825,193 +899,155 @@ function SceneEditor({
                   <Trash2 size={14} />
                 </button>
               </div>
-              <div className="form-grid">
-                <label>
-                  Tiêu đề
-                  <input
-                    value={scene.title}
-                    onChange={(e) => patch(index, { title: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Thời lượng (giây)
-                  <input
-                    type="number"
-                    value={scene.durationEstimate}
-                    onChange={(e) =>
-                      patch(index, { durationEstimate: Number(e.target.value) })
-                    }
-                  />
-                </label>
-              </div>
-              <label>
+              <label className="scene-narration">
                 Narration
                 <textarea
+                  rows={3}
                   value={scene.narration}
                   onChange={(e) => patch(index, { narration: e.target.value })}
                 />
               </label>
-              <label>
-                Mô tả hình ảnh
-                <textarea
-                  value={scene.visualDescription}
-                  onChange={(e) =>
-                    patch(index, { visualDescription: e.target.value })
-                  }
-                />
-              </label>
-              <div className="form-grid">
+              <FlowComposer
+                content={content}
+                scene={scene}
+                accountId={accountId}
+                account={account}
+                flowAccounts={flowAccounts}
+                active={Boolean(active)}
+                localAgentOnline={localAgentOnline}
+                busy={busy}
+                job={job}
+                onPromptChange={(generationPrompt) =>
+                  patch(index, { generationPrompt })
+                }
+                onDurationChange={(durationEstimate) => {
+                  patch(index, { durationEstimate });
+                  act(
+                    `duration-${scene.id}`,
+                    () => saveScene(content.id, scene.id, { durationEstimate }),
+                    `Đã chọn thời lượng ${durationEstimate}s.`,
+                  );
+                }}
+                onRatioChange={(aspectRatio) =>
+                  act(
+                    `ratio-${scene.id}`,
+                    () =>
+                      updateContent(content.id, {
+                        visualStyle: {
+                          ...(content.visualStyle ?? {}),
+                          aspectRatio,
+                        },
+                      }),
+                    `Đã chọn tỷ lệ ${aspectRatio}.`,
+                  )
+                }
+                onAccountChange={(nextAccountId) =>
+                  setSelectedAccounts({
+                    ...selectedAccounts,
+                    [scene.id]: nextAccountId,
+                  })
+                }
+                onGenerate={() =>
+                  act(
+                    `flow-${scene.id}`,
+                    () => createFlowJob(content.id, scene.id, accountId),
+                    "Đã đưa scene vào hàng chờ Flow Worker.",
+                  )
+                }
+              />
+              <AdvancedSection label="Chi tiết Scene">
                 <label>
-                  Camera
-                  <input
-                    value={scene.cameraDirection}
+                  Mô tả hình ảnh
+                  <textarea
+                    value={scene.visualDescription}
                     onChange={(e) =>
-                      patch(index, { cameraDirection: e.target.value })
+                      patch(index, { visualDescription: e.target.value })
                     }
                   />
                 </label>
+                <div className="form-grid">
+                  <label>
+                    Camera
+                    <input
+                      value={scene.cameraDirection}
+                      onChange={(e) =>
+                        patch(index, { cameraDirection: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Bối cảnh
+                    <input
+                      value={scene.environment}
+                      onChange={(e) =>
+                        patch(index, { environment: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
                 <label>
-                  Bối cảnh
-                  <input
-                    value={scene.environment}
+                  Continuity
+                  <textarea
+                    value={scene.continuityNotes}
                     onChange={(e) =>
-                      patch(index, { environment: e.target.value })
+                      patch(index, { continuityNotes: e.target.value })
                     }
                   />
                 </label>
-              </div>
-              <label>
-                Continuity
-                <textarea
-                  value={scene.continuityNotes}
-                  onChange={(e) =>
-                    patch(index, { continuityNotes: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Prompt Google Flow
-                <textarea
-                  className="prompt-editor"
-                  value={scene.generationPrompt}
-                  onChange={(e) =>
-                    patch(index, { generationPrompt: e.target.value })
-                  }
-                />
-              </label>
-              <div className="flow-worker-box">
-                <label>
-                  Tài khoản Google Flow
-                  <select
-                    value={accountId}
-                    onChange={(e) =>
-                      setSelectedAccounts({
-                        ...selectedAccounts,
-                        [scene.id]: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Chưa cấu hình</option>
-                    {flowAccounts.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label} — {flowAccountStatusLabels[item.status]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="primary"
-                  disabled={
-                    !!busy ||
-                    !!active ||
-                    !scene.generationPrompt.trim() ||
-                    !account ||
-                    account.status !== "ready" ||
-                    !localAgentOnline
-                  }
-                  onClick={() =>
-                    act(
-                      `flow-${scene.id}`,
-                      () => createFlowJob(content.id, scene.id, accountId),
-                      "Đã đưa scene vào hàng chờ Flow Worker.",
-                    )
-                  }
-                >
-                  <Video size={14} />
-                  Tạo bằng Google Flow
-                </button>
-                {account && account.status !== "ready" && (
-                  <small>
-                    {account.label} — {flowAccountStatusLabels[account.status]}
-                  </small>
-                )}
-                {job?.error && <small>{job.error}</small>}
-              </div>
-              <div className="scene-actions">
+              </AdvancedSection>
+              <div className="scene-footer-actions">
                 <button
                   className="secondary"
-                  onClick={() =>
-                    act(
-                      `save-${scene.id}`,
-                      () => saveScene(content.id, scene.id, scene),
-                      "Đã lưu scene.",
-                    )
-                  }
+                  onClick={() => navigator.clipboard.writeText(scene.generationPrompt)}
                 >
-                  <Save size={14} />
-                  Lưu
+                  <Clipboard size={14} /> Copy Prompt
                 </button>
                 <button
                   className="secondary"
-                  onClick={() =>
-                    navigator.clipboard.writeText(scene.generationPrompt)
-                  }
-                >
-                  <Clipboard size={14} />
-                  Copy Prompt
-                </button>
-                <button
-                  className="secondary"
-                  disabled={!!busy}
-                  onClick={() =>
-                    act(
-                      `prompt-${scene.id}`,
-                      () => regeneratePrompt(content.id, scene.id),
-                      "Đã tạo prompt mới.",
-                    )
-                  }
-                >
-                  <RefreshCw size={14} />
-                  Prompt mới
-                </button>
-                <button
-                  className="secondary"
-                  disabled={!!busy}
-                  onClick={() =>
-                    act(
-                      `regen-${scene.id}`,
-                      () => regenerateScene(content.id, scene.id),
-                      "Đã regenerate scene.",
-                    )
-                  }
-                >
-                  <Sparkles size={14} />
-                  Regenerate scene
-                </button>
-                <button
-                  className="primary"
                   onClick={() =>
                     act(
                       `approve-${scene.id}`,
-                      () =>
-                        saveScene(content.id, scene.id, { status: "approved" }),
+                      () => saveScene(content.id, scene.id, { status: "approved" }),
                       "Đã duyệt scene.",
                     )
                   }
                 >
-                  <Check size={14} />
-                  Duyệt
+                  <Check size={14} /> Duyệt Scene
                 </button>
+                <details className="scene-more-menu">
+                  <summary aria-label="Thêm tác vụ Scene"><MoreHorizontal size={17} /></summary>
+                  <div>
+                    <button
+                      onClick={() =>
+                        act(
+                          `save-${scene.id}`,
+                          () => saveScene(content.id, scene.id, scene),
+                          "Đã lưu scene.",
+                        )
+                      }
+                    ><Save size={14} /> Lưu Scene</button>
+                    <button
+                      disabled={!!busy}
+                      onClick={() =>
+                        act(
+                          `prompt-${scene.id}`,
+                          () => regeneratePrompt(content.id, scene.id),
+                          "Đã tạo prompt mới.",
+                        )
+                      }
+                    ><RefreshCw size={14} /> Regenerate Prompt</button>
+                    <button
+                      disabled={!!busy}
+                      onClick={() =>
+                        act(
+                          `regen-${scene.id}`,
+                          () => regenerateScene(content.id, scene.id),
+                          "Đã regenerate scene.",
+                        )
+                      }
+                    ><Sparkles size={14} /> Regenerate Scene</button>
+                  </div>
+                </details>
               </div>
               <TakeList
                 content={content}
@@ -1025,6 +1061,121 @@ function SceneEditor({
         })
       )}
     </>
+  );
+}
+
+function FlowComposer({
+  content,
+  scene,
+  accountId,
+  account,
+  flowAccounts,
+  active,
+  localAgentOnline,
+  busy,
+  job,
+  onPromptChange,
+  onDurationChange,
+  onRatioChange,
+  onAccountChange,
+  onGenerate,
+}: {
+  content: ContentRecord;
+  scene: SceneRecord;
+  accountId: string;
+  account?: FlowAccountRecord;
+  flowAccounts: FlowAccountRecord[];
+  active: boolean;
+  localAgentOnline: boolean;
+  busy: string;
+  job?: FlowJobRecord;
+  onPromptChange: (value: string) => void;
+  onDurationChange: (value: number) => void;
+  onRatioChange: (value: string) => void;
+  onAccountChange: (value: string) => void;
+  onGenerate: () => void;
+}) {
+  const currentRatio = content.visualStyle?.aspectRatio || "16:9";
+  const ratioOptions = ["9:16", "16:9"];
+  if (!ratioOptions.includes(currentRatio)) ratioOptions.push(currentRatio);
+  const durationOptions = [4, 6, 8, 10];
+  if (!durationOptions.includes(scene.durationEstimate))
+    durationOptions.push(scene.durationEstimate);
+  durationOptions.sort((a, b) => a - b);
+  const disabledReason = !scene.generationPrompt.trim()
+    ? "Nhập Prompt Google Flow để tiếp tục."
+    : !localAgentOnline
+      ? "Local Agent đang offline."
+      : !account
+        ? "Chưa chọn tài khoản Flow."
+        : account.status !== "ready"
+          ? `${account.label} — ${flowAccountStatusLabels[account.status]}`
+          : active
+            ? "Scene đang được xử lý."
+            : "";
+  const disabled = Boolean(busy || disabledReason);
+  return (
+    <div className="flow-composer">
+      <div className="flow-composer-title">
+        <div>
+          <span className="step-label">Bước 3</span>
+          <strong>Prompt Google Flow</strong>
+        </div>
+        <div className="composer-mode"><Video size={14} /> Video</div>
+      </div>
+      <textarea
+        className="prompt-editor"
+        rows={7}
+        value={scene.generationPrompt}
+        placeholder="Mô tả video cần tạo trong Google Flow…"
+        onChange={(e) => onPromptChange(e.target.value)}
+      />
+      <div className="flow-composer-controls">
+        <SegmentedControl
+          label="Tỷ lệ"
+          value={currentRatio}
+          options={ratioOptions.map((value) => ({ value, label: value }))}
+          onChange={onRatioChange}
+          disabled={Boolean(busy)}
+        />
+        <SegmentedControl
+          label="Thời lượng"
+          value={scene.durationEstimate}
+          options={durationOptions.map((value) => ({ value, label: `${value}s` }))}
+          onChange={onDurationChange}
+          disabled={Boolean(busy)}
+        />
+        <label className="composer-account">
+          <span>Tài khoản</span>
+          <select value={accountId} onChange={(e) => onAccountChange(e.target.value)}>
+            <option value="">Chưa chọn tài khoản Flow</option>
+            {flowAccounts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {flowAccountLabel(item)} — {flowAccountStatusLabels[item.status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="composer-control composer-output">
+          <span>Output</span>
+          <div className="fixed-output" aria-label="Output cố định x1">x1</div>
+        </div>
+        <button
+          className="primary composer-generate"
+          disabled={disabled}
+          title={disabledReason || "Tạo đúng 01 video cho Scene này"}
+          onClick={onGenerate}
+        >
+          {active ? "Đang xử lý…" : "Tạo video"}
+          {!active && <ArrowRight size={16} />}
+        </button>
+      </div>
+      {(disabledReason || job?.error) && (
+        <small className={job?.error ? "composer-error" : "composer-help"}>
+          {job?.error || disabledReason}
+        </small>
+      )}
+    </div>
   );
 }
 
@@ -1046,77 +1197,94 @@ function TakeList({
   );
   return (
     <div className="take-box">
-      <strong>Video Raw / Takes</strong>
-      <button
-        className="small-action"
-        disabled={!!busy}
-        onClick={() =>
-          act(
-            `open-folder-${scene.id}`,
-            () => openSceneFolder(content.id, scene.id),
-            "Đã gửi lệnh mở thư mục Scene tới Local Agent.",
-          )
-        }
-      >
-        <FolderOpen size={14} />
-        Mở thư mục Scene
-      </button>
-      <label className="upload-button">
-        <Upload size={14} />
-        Upload Cloud (tùy chọn)
-        <input
-          type="file"
-          accept="video/*"
+      <div className="take-box-head">
+        <div>
+          <span className="step-label">Bước 4</span>
+          <strong>Video Raw</strong>
+        </div>
+        <button
+          className="small-action"
           disabled={!!busy}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file)
-              act(
-                `upload-${scene.id}`,
-                () =>
-                  uploadMedia(
-                    content,
-                    file,
-                    "scene_take",
-                    scene.id,
-                    takes.length + 1,
-                  ),
-                "Đã upload Video Raw.",
-              );
-          }}
-        />
-      </label>
+          onClick={() =>
+            act(
+              `open-folder-${scene.id}`,
+              () => openSceneFolder(content.id, scene.id),
+              "Đã gửi lệnh mở thư mục Scene tới Local Agent.",
+            )
+          }
+        >
+          <FolderOpen size={14} /> Mở thư mục
+        </button>
+      </div>
       {takes.length === 0 ? (
-        <small>Chưa có clip.</small>
+        <div className="take-empty">
+          <Video size={20} />
+          <span>Chưa có Video Raw cho Scene này.</span>
+        </div>
       ) : (
         takes.map((take) => (
-          <div key={take.id}>
-            {take.storageType === "local" ? (
-              <span>Take {take.takeNumber}: {take.fileName}</span>
-            ) : (
-              <a href={take.downloadUrl} target="_blank" rel="noreferrer">
-                Take {take.takeNumber}: {take.fileName}
-              </a>
-            )}
-            <Badge tone={take.storageType === "local" ? "info" : "neutral"}>
-              {take.storageType === "local" ? "Local" : "Cloud"}
-            </Badge>
-            <button
-              className="small-action"
-              onClick={() =>
-                act(
-                  `select-${take.id}`,
-                  () => selectAsset(content.id, assets, take),
-                  "Đã chọn take.",
-                )
-              }
-            >
-              <Check size={12} />
-              {take.selected ? "Đang chọn" : "Chọn take"}
-            </button>
+          <div className="take-item" key={take.id}>
+            <div className="take-preview">
+              {take.storageType !== "local" && take.downloadUrl ? (
+                <video src={take.downloadUrl} preload="metadata" muted />
+              ) : (
+                <Video size={22} />
+              )}
+            </div>
+            <div className="take-info">
+              <strong>Scene {String(scene.sceneNumber).padStart(2, "0")} — Take {String(take.takeNumber ?? 1).padStart(2, "0")}</strong>
+              <span>{take.fileName}</span>
+              <Badge tone={take.storageType === "local" ? "info" : "neutral"}>
+                {take.storageType === "local" ? "Local" : "Cloud"}
+              </Badge>
+            </div>
+            <div className="take-actions">
+              {take.downloadUrl && (
+                <a className="small-action" href={take.downloadUrl} target="_blank" rel="noreferrer">Xem</a>
+              )}
+              <button
+                className="small-action"
+                onClick={() =>
+                  act(
+                    `select-${take.id}`,
+                    () => selectAsset(content.id, assets, take),
+                    "Đã chọn take.",
+                  )
+                }
+              >
+                <Check size={12} /> {take.selected ? "Đang chọn" : "Chọn Take"}
+              </button>
+            </div>
           </div>
         ))
       )}
+      <AdvancedSection label="Tùy chọn Cloud" className="cloud-options">
+        <p className="field-help">Chỉ dùng khi cần lưu thêm một Video Raw lên Firebase Storage.</p>
+        <label className="upload-button">
+          <Upload size={14} /> Upload Cloud
+          <input
+            type="file"
+            accept="video/*"
+            disabled={!!busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file)
+                act(
+                  `upload-${scene.id}`,
+                  () =>
+                    uploadMedia(
+                      content,
+                      file,
+                      "scene_take",
+                      scene.id,
+                      takes.length + 1,
+                    ),
+                  "Đã upload Video Raw.",
+                );
+            }}
+          />
+        </label>
+      </AdvancedSection>
     </div>
   );
 }
@@ -1139,6 +1307,10 @@ function MediaPanel({
   );
   const articleImages = assets.filter((item) => item.kind === "article_image");
   const finals = assets.filter((item) => item.kind === "video_final");
+  const rawTakes = assets.filter((item) => item.kind === "scene_take");
+  const scenesWithRaw = scenes.filter((scene) =>
+    rawTakes.some((asset) => asset.sceneId === scene.id),
+  ).length;
   const download = () =>
     act(
       "download-scenes",
@@ -1157,23 +1329,51 @@ function MediaPanel({
     <>
       {content.type === "video" ? (
         <>
-          <section>
+          <section className="media-workflow-section">
             <div className="section-title">
               <div>
-                <h3>CapCut Handoff</h3>
-                <small>CapCut nằm ngoài hệ thống.</small>
+                <span className="step-label">Bước 4</span>
+                <h3>Video Raw</h3>
+                <small>{scenesWithRaw}/{scenes.length} Scene đã có Video Raw</small>
+              </div>
+            </div>
+            <div className="media-scene-list">
+              {scenes.map((scene) => {
+                const sceneTakes = rawTakes.filter((asset) => asset.sceneId === scene.id);
+                return (
+                  <div key={scene.id}>
+                    <span><strong>Scene {String(scene.sceneNumber).padStart(2, "0")}</strong>{scene.title}</span>
+                    <Badge tone={sceneTakes.length ? "success" : "neutral"}>
+                      {sceneTakes.length ? `${sceneTakes.length} Take` : "Chưa có Raw"}
+                    </Badge>
+                    <button
+                      className="small-action"
+                      disabled={!!busy}
+                      onClick={() =>
+                        act(
+                          `open-folder-media-${scene.id}`,
+                          () => openSceneFolder(content.id, scene.id),
+                          "Đã gửi lệnh mở thư mục Scene tới Local Agent.",
+                        )
+                      }
+                    ><FolderOpen size={13} /> Mở thư mục</button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+          <section className="media-workflow-section capcut-handoff">
+            <div className="section-title">
+              <div>
+                <h3>CapCut / Hậu kỳ</h3>
+                <small>CapCut nằm ngoài hệ thống. Dùng danh sách Scene để tổ chức file.</small>
               </div>
               <button className="secondary" onClick={download}>
-                <Download size={14} />
-                Tải danh sách scene
+                <Download size={14} /> Tải danh sách Scene
               </button>
             </div>
-            <p className="field-help">
-              Đã có {assets.filter((item) => item.kind === "scene_take").length}{" "}
-              Video Raw cho {scenes.length} scene.
-            </p>
             <button
-              className="primary"
+              className="secondary"
               disabled={
                 !scenes.length ||
                 scenes.some(
@@ -1194,14 +1394,18 @@ function MediaPanel({
                 )
               }
             >
-              Đủ Video Raw — Chờ hậu kỳ
+              <Check size={14} /> Đủ Video Raw — Chuyển sang Chờ hậu kỳ
             </button>
           </section>
-          <section>
-            <h3>Video Final</h3>
-            <label className="upload-button">
+          <section className="media-workflow-section final-video-section">
+            <div>
+              <span className="step-label">Video Final</span>
+              <h3>Hoàn tất hậu kỳ</h3>
+              <p className="field-help">Chọn file Video Final sau khi hoàn thành trong CapCut.</p>
+            </div>
+            <label className="upload-button final-picker">
               <Video size={14} />
-              Upload Video Final
+              Chọn Video Final từ máy
               <input
                 type="file"
                 accept="video/*"
@@ -1212,24 +1416,28 @@ function MediaPanel({
                     act(
                       "final-upload",
                       () => uploadMedia(content, file, "video_final"),
-                      "Đã upload Video Final. Hãy chọn file chính.",
+                      "Đã lưu Video Final. Hãy chọn file chính.",
                     );
                 }}
               />
             </label>
-            {finals.map((asset) => (
-              <AssetRow
-                key={asset.id}
-                asset={asset}
-                onSelect={() =>
-                  act(
-                    `select-${asset.id}`,
-                    () => selectAsset(content.id, assets, asset),
-                    "Đã chọn Video Final.",
-                  )
-                }
-              />
-            ))}
+            {finals.length === 0 ? (
+              <div className="take-empty"><Video size={20} /><span>Chưa có Video Final.</span></div>
+            ) : (
+              finals.map((asset) => (
+                <AssetRow
+                  key={asset.id}
+                  asset={asset}
+                  onSelect={() =>
+                    act(
+                      `select-${asset.id}`,
+                      () => selectAsset(content.id, assets, asset),
+                      "Đã chọn Video Final.",
+                    )
+                  }
+                />
+              ))
+            )}
           </section>
         </>
       ) : (
@@ -1426,28 +1634,26 @@ function CopyEditor({
                 })
               }
             />
-            <div className="scene-actions">
+            <div className="platform-copy-actions">
+              {!copy && (
+                <button
+                  className="primary"
+                  disabled={!!busy}
+                  onClick={() =>
+                    act(
+                      `copy-${platform}`,
+                      () => generatePlatformCopy(content.id, platform, false),
+                      `Đã tạo bản ${platformLabels[platform]}.`,
+                    )
+                  }
+                ><Sparkles size={14} /> Tạo bản {platformLabels[platform]}</button>
+              )}
               <button
                 className="secondary"
-                disabled={!!busy}
-                onClick={() => {
-                  const replace = !!copy;
-                  if (
-                    replace &&
-                    !window.confirm(
-                      `Tạo draft ${platformLabels[platform]} mới? Bản hiện tại sẽ được thay thế sau xác nhận này.`,
-                    )
-                  )
-                    return;
-                  act(
-                    `copy-${platform}`,
-                    () => generatePlatformCopy(content.id, platform, replace),
-                    `Đã tạo bản ${platformLabels[platform]}.`,
-                  );
-                }}
+                disabled={!copy}
+                onClick={() => navigator.clipboard.writeText(copy?.text ?? "")}
               >
-                <Sparkles size={14} />
-                {copy ? "Regenerate" : "Generate"}
+                <Clipboard size={14} /> Copy
               </button>
               <button
                 className="secondary"
@@ -1467,16 +1673,7 @@ function CopyEditor({
                   )
                 }
               >
-                <Save size={14} />
-                Save
-              </button>
-              <button
-                className="secondary"
-                disabled={!copy}
-                onClick={() => navigator.clipboard.writeText(copy?.text ?? "")}
-              >
-                <Clipboard size={14} />
-                Copy
+                <Save size={14} /> Lưu
               </button>
               <button
                 className="primary"
@@ -1489,25 +1686,43 @@ function CopyEditor({
                   )
                 }
               >
-                <Check size={14} />
-                Duyệt
+                <Check size={14} /> Duyệt
               </button>
-              <button
-                className="small-action"
-                onClick={() => {
-                  const url = window.prompt(
-                    `URL bài ${platformLabels[platform]} đã đăng thủ công:`,
-                  );
-                  if (url)
-                    act(
-                      `publish-${platform}`,
-                      () => markManualPublished(content.id, platform, url),
-                      "Đã ghi nhận đăng thủ công.",
-                    );
-                }}
-              >
-                Đã đăng thủ công
-              </button>
+              {copy && (
+                <details className="scene-more-menu platform-more-menu">
+                  <summary aria-label={`Thêm tác vụ ${platformLabels[platform]}`}><MoreHorizontal size={17} /></summary>
+                  <div>
+                    <button
+                      disabled={!!busy}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Tạo draft ${platformLabels[platform]} mới? Bản hiện tại sẽ được thay thế sau xác nhận này.`,
+                          )
+                        ) return;
+                        act(
+                          `copy-${platform}`,
+                          () => generatePlatformCopy(content.id, platform, true),
+                          `Đã tạo bản ${platformLabels[platform]}.`,
+                        );
+                      }}
+                    ><RefreshCw size={14} /> Regenerate</button>
+                    <button
+                      onClick={() => {
+                        const url = window.prompt(
+                          `URL bài ${platformLabels[platform]} đã đăng thủ công:`,
+                        );
+                        if (url)
+                          act(
+                            `publish-${platform}`,
+                            () => markManualPublished(content.id, platform, url),
+                            "Đã ghi nhận đăng thủ công.",
+                          );
+                      }}
+                    ><Check size={14} /> Đã đăng thủ công</button>
+                  </div>
+                </details>
+              )}
             </div>
           </section>
         );
