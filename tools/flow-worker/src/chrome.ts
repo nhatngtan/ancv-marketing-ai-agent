@@ -1,7 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { accountProfilePath, chromeExecutable, ensureLocalDirectories, flowConfig } from './config.js';
+import { accountProfilePath, chromeExecutable, ensureLocalDirectories, flowConfig, loadLocalAgentConfig, type LocalProfileMapping } from './config.js';
+
+function automationProfile(accountId: string, expectedProfileDirectory?: string): LocalProfileMapping {
+  if (!expectedProfileDirectory) return { logicalId: accountId, kind: 'managed', userDataDir: accountProfilePath(accountId) };
+  const configured = loadLocalAgentConfig().profiles.find((profile) => profile.logicalId === accountId);
+  const mapping = configured ?? { logicalId: accountId, kind: 'managed' as const, userDataDir: accountProfilePath(accountId) };
+  if (expectedProfileDirectory && mapping.profileDirectory !== expectedProfileDirectory) {
+    throw new Error(`FLOW_PROFILE_MAPPING_MISMATCH expected=${expectedProfileDirectory} actual=${mapping.profileDirectory ?? 'managed'}`);
+  }
+  return mapping;
+}
 
 export function chromeLoginArgs(accountId: string): string[] {
   return [
@@ -13,9 +23,11 @@ export function chromeLoginArgs(accountId: string): string[] {
   ];
 }
 
-export function chromeAutomationArgs(accountId: string): string[] {
+export function chromeAutomationArgs(accountId: string, expectedProfileDirectory?: string): string[] {
+  const profile = automationProfile(accountId, expectedProfileDirectory);
   return [
-    `--user-data-dir=${accountProfilePath(accountId)}`,
+    `--user-data-dir=${profile.userDataDir}`,
+    ...(profile.profileDirectory ? [`--profile-directory=${profile.profileDirectory}`] : []),
     '--remote-debugging-address=127.0.0.1',
     '--remote-debugging-port=0',
     '--no-first-run',
@@ -34,15 +46,16 @@ export function openLoginChrome(accountId: string): void {
   child.unref();
 }
 
-function devToolsActivePortPath(accountId: string): string {
-  return join(accountProfilePath(accountId), 'DevToolsActivePort');
+function devToolsActivePortPath(accountId: string, expectedProfileDirectory?: string): string {
+  return join(automationProfile(accountId, expectedProfileDirectory).userDataDir, 'DevToolsActivePort');
 }
 
-export async function startDebugChrome(accountId: string): Promise<{ process: ChildProcess; port: number }> {
-  ensureLocalDirectories(accountId);
-  const portFile = devToolsActivePortPath(accountId);
+export async function startDebugChrome(accountId: string, expectedProfileDirectory?: string): Promise<{ process: ChildProcess; port: number }> {
+  const profile = automationProfile(accountId, expectedProfileDirectory);
+  if (profile.kind === 'managed') ensureLocalDirectories(accountId);
+  const portFile = devToolsActivePortPath(accountId, expectedProfileDirectory);
   await unlink(portFile).catch(() => undefined);
-  const chromeProcess = spawn(chromeExecutable(), chromeAutomationArgs(accountId), {
+  const chromeProcess = spawn(chromeExecutable(), chromeAutomationArgs(accountId, expectedProfileDirectory), {
     stdio: 'ignore',
     windowsHide: false,
   });

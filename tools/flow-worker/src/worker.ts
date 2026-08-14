@@ -136,7 +136,9 @@ export async function processPlaywrightJob(job: FlowJobRecord): Promise<void> {
   const accountSnapshot = await firestore.collection('flowAccounts').doc(job.flowAccountId).get();
   const account = accountSnapshot.data() as FlowAccountRecord | undefined;
   if (!account || account.status !== 'ready') { await failJob(job, 'Tài khoản Flow chưa sẵn sàng.', account?.status ?? 'needs_login'); return; }
-  const session = await connectAccountContext(job.flowAccountId);
+  if (account.projectUrl && account.projectUrl !== job.flowProjectUrl) { await failJob(job, 'FLOW_PROJECT_MAPPING_MISMATCH'); return; }
+  if (job.chromeProfileId && account.chromeProfileId && job.chromeProfileId !== account.chromeProfileId) { await failJob(job, 'FLOW_PROFILE_MAPPING_MISMATCH'); return; }
+  const session = await connectAccountContext(job.flowAccountId, job.chromeProfileId);
   const { page } = session;
   let downloadedPath = '';
   try {

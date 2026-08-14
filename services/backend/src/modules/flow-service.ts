@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { BROWSER_PLATFORMS, type BrowserPlatform, type BrowserProfileMapping, type BrowserProfileSettings, type ChromeProfileMetadata, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type SceneRecord } from '@ancv/shared';
 import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
+import type { Firestore } from 'firebase-admin/firestore';
 
 export const flowRouter = Router();
 
@@ -10,10 +11,17 @@ const createJobSchema = z.object({
   contentDocId: z.string().min(1).max(200),
   sceneId: z.string().min(1).max(200),
   flowAccountId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/),
+  generationPrompt: z.string().trim().min(1).max(8_000),
+  durationEstimate: z.union([z.literal(4), z.literal(6), z.literal(8), z.literal(10)]),
+  aspectRatio: z.enum(['9:16', '16:9']),
 });
 const openFolderSchema = z.object({
   contentDocId: z.string().min(1).max(200),
   sceneId: z.string().min(1).max(200),
+  agentId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/).default('ancv-windows-01'),
+});
+const openVideoFolderSchema = z.object({
+  contentDocId: z.string().min(1).max(200),
   agentId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/).default('ancv-windows-01'),
 });
 const chromeProfileIdSchema = z.string().regex(/^(?:Default|Profile(?: \d+)?)$/);
@@ -47,6 +55,60 @@ export function isOfficialFlowProjectUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export async function createFlowJobWithCurrentState(input: z.infer<typeof createJobSchema>, uid: string, store: Firestore = db()): Promise<FlowJobRecord> {
+  const contentRef = store.collection('contents').doc(input.contentDocId);
+  const sceneRef = store.collection('scenes').doc(input.sceneId);
+  const accountRef = store.collection('flowAccounts').doc(input.flowAccountId);
+  const browserProfilesRef = store.collection('systemSettings').doc('browserProfiles');
+  const jobRef = store.collection('flowJobs').doc(input.sceneId);
+  const now = new Date().toISOString();
+  return store.runTransaction(async (transaction) => {
+    const [contentSnapshot, sceneSnapshot, accountSnapshot, browserProfilesSnapshot, jobSnapshot] = await Promise.all([
+      transaction.get(contentRef), transaction.get(sceneRef), transaction.get(accountRef), transaction.get(browserProfilesRef), transaction.get(jobRef),
+    ]);
+    if (!contentSnapshot.exists || contentSnapshot.data()?.type !== 'video') throw Object.assign(new Error('VIDEO_CONTENT_NOT_FOUND'), { statusCode: 404 });
+    if (!sceneSnapshot.exists || sceneSnapshot.data()?.contentDocId !== input.contentDocId) throw Object.assign(new Error('SCENE_NOT_FOUND'), { statusCode: 404 });
+    if (!accountSnapshot.exists) throw Object.assign(new Error('FLOW_ACCOUNT_NOT_FOUND'), { statusCode: 409 });
+    const account = accountSnapshot.data() as FlowAccountRecord;
+    if (account.status !== 'ready') throw Object.assign(new Error('FLOW_ACCOUNT_NOT_READY'), { statusCode: 409 });
+    const browserProfiles = browserProfilesSnapshot.data() as BrowserProfileSettings | undefined;
+    const mapping = browserProfiles?.mappings?.google_flow;
+    const validation = browserProfiles?.validations?.google_flow;
+    if (!mapping || validation?.platformStatus !== 'ready_for_write_test' || validation.chromeProfileId !== mapping.chromeProfileId) {
+      throw Object.assign(new Error('FLOW_PROFILE_MAPPING_NOT_READY'), { statusCode: 409 });
+    }
+    if (account.chromeProfileId && account.chromeProfileId !== mapping.chromeProfileId) {
+      throw Object.assign(new Error('FLOW_PROFILE_MAPPING_MISMATCH'), { statusCode: 409 });
+    }
+    const content = contentSnapshot.data() as ContentRecord;
+    const projectUrl = account.projectUrl ?? content.flowProjectUrl ?? '';
+    if (!isOfficialFlowProjectUrl(projectUrl)) throw Object.assign(new Error('FLOW_PROJECT_URL_REQUIRED'), { statusCode: 409 });
+    const existing = jobSnapshot.data() as FlowJobRecord | undefined;
+    if (existing && ['queued', 'processing'].includes(existing.status)) throw Object.assign(new Error('FLOW_JOB_ALREADY_ACTIVE'), { statusCode: 409 });
+    const scene = sceneSnapshot.data() as SceneRecord;
+    const record: FlowJobRecord = {
+      id: jobRef.id, contentDocId: input.contentDocId, contentId: content.contentId,
+      sceneId: input.sceneId, sceneNumber: scene.sceneNumber, prompt: input.generationPrompt,
+      durationEstimate: input.durationEstimate, aspectRatio: input.aspectRatio,
+      flowAccountId: input.flowAccountId, flowProjectUrl: projectUrl,
+      chromeProfileId: mapping.chromeProfileId,
+      ...(account.email ? { flowAccountEmail: account.email } : {}),
+      executionMode: 'playwright_fallback', storageStrategy: 'local_first',
+      status: 'queued', attempt: Number(existing?.attempt ?? 0) + 1, error: null,
+      createdAt: existing?.createdAt ?? now, updatedAt: now, createdBy: uid,
+    };
+    transaction.set(jobRef, record);
+    transaction.update(sceneRef, {
+      generationPrompt: input.generationPrompt, durationEstimate: input.durationEstimate,
+      flowJobId: jobRef.id, flowStatus: 'queued', updatedAt: now,
+    });
+    transaction.update(contentRef, {
+      visualStyle: { ...(content.visualStyle ?? {}), aspectRatio: input.aspectRatio }, updatedAt: now,
+    });
+    return record;
+  });
 }
 
 flowRouter.get('/browser-profiles', requireFirebaseAdmin, async (_request, response, next) => {
@@ -116,42 +178,9 @@ flowRouter.get('/browser-profiles/commands/:commandId', requireFirebaseAdmin, as
 flowRouter.post('/jobs', requireFirebaseEditor, async (request, response, next) => {
   try {
     const input = createJobSchema.parse(request.body);
+    if (!await localAgentOnline('ancv-windows-01')) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
     const uid = response.locals.identity.uid as string;
-    const contentRef = db().collection('contents').doc(input.contentDocId);
-    const sceneRef = db().collection('scenes').doc(input.sceneId);
-    const accountRef = db().collection('flowAccounts').doc(input.flowAccountId);
-    const jobRef = db().collection('flowJobs').doc(input.sceneId);
-    const now = new Date().toISOString();
-
-    const job = await db().runTransaction(async (transaction) => {
-      const [contentSnapshot, sceneSnapshot, accountSnapshot, jobSnapshot] = await Promise.all([
-        transaction.get(contentRef), transaction.get(sceneRef), transaction.get(accountRef), transaction.get(jobRef),
-      ]);
-      if (!contentSnapshot.exists || contentSnapshot.data()?.type !== 'video') throw Object.assign(new Error('VIDEO_CONTENT_NOT_FOUND'), { statusCode: 404 });
-      if (!sceneSnapshot.exists || sceneSnapshot.data()?.contentDocId !== input.contentDocId) throw Object.assign(new Error('SCENE_NOT_FOUND'), { statusCode: 404 });
-      if (!accountSnapshot.exists) throw Object.assign(new Error('FLOW_ACCOUNT_NOT_FOUND'), { statusCode: 409 });
-      const account = accountSnapshot.data() as FlowAccountRecord;
-      if (account.status !== 'ready') throw Object.assign(new Error('FLOW_ACCOUNT_NOT_READY'), { statusCode: 409 });
-      const projectUrl = account.projectUrl ?? (contentSnapshot.data() as ContentRecord).flowProjectUrl ?? '';
-      if (!isOfficialFlowProjectUrl(projectUrl)) throw Object.assign(new Error('FLOW_PROJECT_URL_REQUIRED'), { statusCode: 409 });
-      const existing = jobSnapshot.data() as FlowJobRecord | undefined;
-      if (existing && ['queued', 'processing'].includes(existing.status)) throw Object.assign(new Error('FLOW_JOB_ALREADY_ACTIVE'), { statusCode: 409 });
-      const scene = sceneSnapshot.data() as SceneRecord;
-      const prompt = scene.generationPrompt?.trim();
-      if (!prompt) throw Object.assign(new Error('FLOW_PROMPT_REQUIRED'), { statusCode: 409 });
-      const content = contentSnapshot.data() as ContentRecord;
-      const record: FlowJobRecord = {
-        id: jobRef.id, contentDocId: input.contentDocId, contentId: content.contentId,
-        sceneId: input.sceneId, sceneNumber: scene.sceneNumber, prompt,
-        flowAccountId: input.flowAccountId, flowProjectUrl: projectUrl,
-        executionMode: 'playwright_fallback', storageStrategy: 'local_first',
-        status: 'queued', attempt: Number(existing?.attempt ?? 0) + 1, error: null,
-        createdAt: existing?.createdAt ?? now, updatedAt: now, createdBy: uid,
-      };
-      transaction.set(jobRef, record);
-      transaction.update(sceneRef, { flowJobId: jobRef.id, flowStatus: 'queued', updatedAt: now });
-      return record;
-    });
+    const job = await createFlowJobWithCurrentState(input, uid);
     response.status(201).json({ job });
   } catch (error) { next(error); }
 });
@@ -179,5 +208,19 @@ flowRouter.post('/local-commands/open-scene-folder', requireFirebaseEditor, asyn
     };
     await ref.set(command);
     response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/local-commands/open-video-folder', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = openVideoFolderSchema.parse(request.body);
+    if (!await localAgentOnline(input.agentId)) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
+    const content = await db().collection('contents').doc(input.contentDocId).get();
+    if (!content.exists || content.data()?.type !== 'video') throw Object.assign(new Error('VIDEO_CONTENT_NOT_FOUND'), { statusCode: 404 });
+    const contentId = String(content.data()?.contentId ?? '');
+    if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId)) throw Object.assign(new Error('LOCAL_FOLDER_METADATA_INVALID'), { statusCode: 409 });
+    const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
+    const command = { id: ref.id, agentId: input.agentId, command: 'open_folder' as const, relativePath: `Projects/${contentId}/Video Raw`, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
+    await ref.set(command); response.status(201).json({ command });
   } catch (error) { next(error); }
 });

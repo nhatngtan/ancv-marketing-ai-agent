@@ -173,6 +173,7 @@ export interface FlowAccountRecord extends AuditFields {
   label: string;
   email?: string;
   projectUrl?: string;
+  chromeProfileId?: string;
   lastCheckedAt?: string;
   limitation?: string;
 }
@@ -184,15 +185,19 @@ export interface FlowJobRecord extends AuditFields {
   sceneId: string;
   sceneNumber: number;
   prompt: string;
+  durationEstimate?: number;
+  aspectRatio?: '9:16' | '16:9';
   flowAccountId: string;
   flowProjectUrl: string;
+  chromeProfileId?: string;
+  flowAccountEmail?: string;
   attempt: number;
   error?: string | null;
   startedAt?: string;
   completedAt?: string;
   generateIntentAt?: string;
   generateClicks?: number;
-  generateInputMethod?: 'dom' | 'cdp_mouse' | 'playwright';
+  generateInputMethod?: 'dom' | 'cdp_mouse' | 'playwright' | 'computer_use_uat';
   generationAcceptanceSignal?: boolean;
   generationRequestObserved?: boolean;
   generationResponseStatus?: number | null;

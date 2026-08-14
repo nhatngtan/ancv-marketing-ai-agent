@@ -11,6 +11,8 @@ export interface FlowUiInspection {
 
 export interface LocatedControl { key: string; locator: Locator }
 
+export const generateButtonTextPattern = /^(?:(?:arrow_forward|add_2)\s*)?(?:Tạo|Generate)(?:\s+video)?$/i;
+
 export function flowProjectBaseUrl(value: string): string {
   try {
     const url = new URL(value);
@@ -137,7 +139,7 @@ export async function inspectFlowUi(page: Page): Promise<FlowUiInspection> {
     { key: 'video-text-button', locator: page.locator('button').filter({ hasText: /^video$/i }) },
   ]);
   const generate = await uniqueVisible([
-    { key: 'generate-arrow-button', locator: page.locator('button').filter({ hasText: /arrow_forward\s*(Tạo|Generate)$/i }) },
+    { key: 'generate-icon-button', locator: page.locator('button').filter({ hasText: generateButtonTextPattern }) },
     { key: 'generate-button', locator: page.getByRole('button', { name: /^(generate|generate video|tạo|tạo video)$/i }) },
     { key: 'generate-text-button', locator: page.locator('button').filter({ hasText: /^(generate|generate video|tạo|tạo video)$/i }) },
   ]);

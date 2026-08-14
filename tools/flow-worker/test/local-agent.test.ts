@@ -5,6 +5,7 @@ import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
 import { findNewCompletedDownloads, flowJobTempRelativePath } from '../src/worker.js';
 import { parseChromeProfiles } from '../src/chrome-profile-scanner.js';
+import { runAgentIteration } from '../src/local-agent.js';
 
 const config: LocalAgentConfig = {
   agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
@@ -59,5 +60,22 @@ describe('safe Chrome profile scanning', () => {
     } as never, '2026-08-12T00:00:00.000Z');
     expect(records).toEqual([{ chromeProfileId: 'Profile 42', profileLabel: 'Nhat', email: 'nhat@example.com', detectedAt: '2026-08-12T00:00:00.000Z' }]);
     expect(JSON.stringify(records)).not.toContain('must-not-leak');
+  });
+});
+
+describe('Local Agent iteration resilience', () => {
+  it('survives a transient pre-generate error and processes the job once on the next iteration', async () => {
+    let iteration = 0;
+    let processedJobs = 0;
+    let errorHeartbeats = 0;
+    const work = async () => {
+      iteration += 1;
+      if (iteration === 1) throw new Error('FIRESTORE_TEMPORARY_UNAVAILABLE');
+      processedJobs += 1;
+    };
+    expect(await runAgentIteration(work, async () => { errorHeartbeats += 1; }, async () => undefined)).toBe(false);
+    expect(await runAgentIteration(work, async () => { errorHeartbeats += 1; }, async () => undefined)).toBe(true);
+    expect(errorHeartbeats).toBe(1);
+    expect(processedJobs).toBe(1);
   });
 });

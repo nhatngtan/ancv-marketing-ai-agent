@@ -60,7 +60,28 @@ const socialUrls: Record<Exclude<BrowserPlatform, "google_flow">, string> = {
 };
 
 const sleep = (milliseconds: number) =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds));
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+export function safeIterationErrorCode(error: unknown): string {
+  const value = error instanceof Error ? error.message : String(error);
+  const code = value.match(/^[A-Z][A-Z0-9_:-]{2,80}/)?.[0];
+  return code ?? (error instanceof Error ? error.name : "UNKNOWN_ERROR");
+}
+
+export async function runAgentIteration(
+  iteration: () => Promise<void>,
+  onError: (errorCode: string) => Promise<void>,
+  backoff: () => Promise<void> = () => sleep(2_000),
+): Promise<boolean> {
+  try {
+    await iteration();
+    return true;
+  } catch (error) {
+    await onError(safeIterationErrorCode(error)).catch(() => undefined);
+    await backoff();
+    return false;
+  }
+}
 
 function outputSignature(inspection: FlowInspection): string {
   return [...new Set(inspection.outputIds ?? [])].sort().join("|");
@@ -100,11 +121,17 @@ export class LocalAgent {
       }),
     );
     while (!this.stopped) {
-      const command = await this.nextLocalCommand();
-      if (command) await this.processLocalCommand(command);
-      const job = await this.nextFlowJob();
-      if (job) await this.processFlowJob(job);
-      if (!command && !job) await sleep(2_000);
+      await runAgentIteration(async () => {
+        const command = await this.nextLocalCommand();
+        if (command) await this.processLocalCommand(command);
+        const job = await this.nextFlowJob();
+        if (job) await this.processFlowJob(job);
+        if (!command && !job) await sleep(2_000);
+      }, async (errorCode) => {
+        console.log(JSON.stringify({ event: "local_agent_iteration_error", errorCode }));
+        await this.heartbeat("error", "Lỗi tạm thời; Local Agent sẽ tiếp tục.").catch(() => undefined);
+        await this.markInterruptedJobs().catch(() => undefined);
+      });
     }
   }
 

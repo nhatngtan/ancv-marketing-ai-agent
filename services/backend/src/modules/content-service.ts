@@ -1,11 +1,22 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { CompanyProfile, PlatformPublication } from '@ancv/shared';
-import { allocateContentId } from '../services/content-id.js';
+import { allocateContentId, createContentWithId } from '../services/content-id.js';
 import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
 
 export const contentRouter = Router();
+
+const optionalText = (max: number) => z.string().max(max).optional();
+const createContentSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('video'), title: z.string().trim().min(1).max(300) }).strict(),
+  z.object({
+    type: z.literal('article'), title: z.string().trim().min(1).max(300), topic: z.string().trim().min(1).max(500),
+    body: optionalText(100_000), objective: optionalText(5_000), shortDescription: optionalText(5_000),
+    sourceMaterial: optionalText(50_000), notes: optionalText(10_000), desiredLength: optionalText(200),
+    platforms: z.array(z.enum(['website', 'facebook', 'zalo', 'linkedin'])).min(1).max(4).optional(),
+  }).strict(),
+]);
 
 const sceneFields = {
   sceneNumber: z.number().int().min(1).max(999), title: z.string().min(1).max(200), durationEstimate: z.number().int().min(1).max(120),
@@ -34,6 +45,14 @@ export async function loadCompanyProfile(): Promise<CompanyProfile> {
 contentRouter.post('/allocate-id', requireFirebaseEditor, async (request, response, next) => {
   try { const payload = z.object({ type: z.enum(['video', 'article']) }).parse(request.body); response.status(201).json({ contentId: await allocateContentId(payload.type) }); }
   catch (error) { next(error); }
+});
+
+contentRouter.post('/', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = createContentSchema.parse(request.body);
+    const content = await createContentWithId(input, response.locals.identity.uid);
+    response.status(201).json({ content });
+  } catch (error) { next(error); }
 });
 
 contentRouter.get('/company-profile', requireFirebaseEditor, async (_request, response, next) => {

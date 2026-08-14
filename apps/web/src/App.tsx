@@ -69,6 +69,7 @@ export default function App() {
   const [connectors, setConnectors] = useState<ConnectorRecord[]>(DEFAULT_CONNECTORS);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCreate, setShowCreate] = useState<ContentType | null>(null);
+  const [openContentId, setOpenContentId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
@@ -114,7 +115,7 @@ export default function App() {
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
         {firebaseConfigured && authReady && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
           {page === 'overview' && <Overview contents={contents} connectors={connectors} aiUsage={aiUsage} onNavigate={openPage} />}
-          {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} localAgents={localAgents} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
+          {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} localAgents={localAgents} openContentId={openContentId} onOpened={() => setOpenContentId(null)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
           {page === 'health' && <HealthPage connectors={connectors} localAgents={localAgents}/>}
           {page === 'settings' && <CompanySettings onToast={setToast}/>}
@@ -122,7 +123,17 @@ export default function App() {
         </>}
       </section>
     </main>
-    {showCreate && <CreateContentModal type={showCreate} onClose={() => setShowCreate(null)} onSaved={() => { setShowCreate(null); setToast('Đã tạo Content mới.'); }}/>} 
+    {showCreate && (
+      <CreateContentModal
+        type={showCreate}
+        onClose={() => setShowCreate(null)}
+        onSaved={(content) => {
+          setShowCreate(null);
+          setOpenContentId(content.id);
+          setToast(content.type === 'video' ? 'Đã tạo Video mới.' : 'Đã tạo Content mới.');
+        }}
+      />
+    )}
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}
   </div>;
 }
@@ -198,20 +209,34 @@ function ContentDrawer({ content, onClose, onToast }: { content: ContentRecord; 
     </div></aside></>;
 }
 
-function CreateContentModal({ type, onClose, onSaved }: { type: ContentType; onClose: () => void; onSaved: () => void }) {
+export function CreateContentModal({ type, onClose, onSaved, createAction = createContent }: { type: ContentType; onClose: () => void; onSaved: (content: ContentRecord) => void; createAction?: typeof createContent }) {
   const options: Platform[] = type === 'video' ? ['youtube','tiktok','facebook','zalo','linkedin'] : ['website','facebook','zalo','linkedin'];
   const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); const data = new FormData(event.currentTarget);
-    try { await createContent({ type, title: String(data.get('title')), topic: String(data.get('topic')), body: '', masterScript: type === 'video' ? String(data.get('masterScript') ?? '') : undefined, objective: type === 'article' ? String(data.get('objective') ?? '') : undefined, shortDescription: type === 'article' ? String(data.get('emphasis') ?? '') : undefined, sourceMaterial: type === 'article' ? String(data.get('sourceMaterial') ?? '') : undefined, notes: type === 'article' ? String(data.get('notes') ?? '') : undefined, desiredLength: type === 'article' ? String(data.get('desiredLength') ?? '') : undefined, platforms: options.filter((platform) => data.get(platform) === 'on') }); onSaved(); }
+    event.preventDefault(); setBusy(true); setErrorMessage(''); const data = new FormData(event.currentTarget);
+    const optional = (name: string) => { const value = String(data.get(name) ?? '').trim(); return value || undefined; };
+    try {
+      const content = type === 'video'
+        ? await createAction({ type: 'video', title: String(data.get('title') ?? '').trim() })
+        : await createAction({ type: 'article', title: String(data.get('title') ?? '').trim(), topic: String(data.get('topic') ?? '').trim(), body: '', objective: optional('objective'), shortDescription: optional('emphasis'), sourceMaterial: optional('sourceMaterial'), notes: optional('notes'), desiredLength: optional('desiredLength'), platforms: options.filter((platform) => data.get(platform) === 'on') });
+      onSaved(content);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error && /^[A-Z0-9_]+$/.test(String(error.code)) ? ` (${String(error.code)})` : '';
+      setErrorMessage(`Không thể tạo ${type === 'video' ? 'Video' : 'bài viết'}. Hệ thống chưa lưu dữ liệu. Vui lòng thử lại.${code}`);
+    }
     finally { setBusy(false); }
   };
   return <div className="modal-wrap"><button className="modal-scrim" onClick={onClose}/><form className="modal" onSubmit={submit}><div className="modal-head"><div><span className="eyebrow">TẠO MỚI</span><h2>{type === 'video' ? 'Content Video' : 'Content Bài viết'}</h2></div><button type="button" onClick={onClose}><X/></button></div>
-    <label>Tiêu đề<input name="title" required placeholder="Nhập tiêu đề Content"/></label><label>Chủ đề<input name="topic" required placeholder="Chủ đề chiến dịch"/></label>
-    {type === 'video' && <label>MASTER SCRIPT<textarea name="masterScript" rows={6} placeholder="Có thể nhập ngay hoặc lưu dự án trước rồi paste sau"/><small>AI không tạo MASTER SCRIPT.</small></label>}
+    {type === 'video' ? (
+      <label>Tên / Chủ đề Video<input name="title" required autoFocus placeholder="Ví dụ: Giải pháp an ninh cho nhà máy"/></label>
+    ) : (
+      <><label>Tiêu đề<input name="title" required placeholder="Nhập tiêu đề Content"/></label><label>Chủ đề<input name="topic" required placeholder="Chủ đề chiến dịch"/></label></>
+    )}
     {type === 'article' && <><label>Mục tiêu bài<input name="objective" placeholder="Không bắt buộc"/></label><label>Thông tin cần nhấn mạnh<textarea name="emphasis" rows={3}/></label><label>Tài liệu nguồn<textarea name="sourceMaterial" rows={4} placeholder="Chỉ AI dùng các dữ kiện được cung cấp/xác minh"/></label><label>Ghi chú<textarea name="notes" rows={3}/></label><label>Độ dài mong muốn<input name="desiredLength" placeholder="Ví dụ: 800–1.000 từ"/></label></>}
-    <fieldset><legend>Nền tảng đích</legend><div className="checkboxes">{options.map((platform) => <label key={platform}><input type="checkbox" name={platform} defaultChecked/><span>{platformLabels[platform]}</span></label>)}</div></fieldset>
-    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Tạo Content'}</button></div>
+    {type === 'article' && <fieldset><legend>Nền tảng đích</legend><div className="checkboxes">{options.map((platform) => <label key={platform}><input type="checkbox" name={platform} defaultChecked/><span>{platformLabels[platform]}</span></label>)}</div></fieldset>}
+    {errorMessage && <div className="form-error" role="alert"><CircleAlert size={16}/><span>{errorMessage}</span></div>}
+    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : type === 'video' ? 'Tạo Video' : 'Tạo Content'}</button></div>
   </form></div>;
 }
 

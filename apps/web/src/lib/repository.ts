@@ -1,7 +1,22 @@
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type ContentType, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type Role, type SceneRecord } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type Role, type SceneRecord } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
+
+type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
+type CreateContentInput =
+  | { type: 'video'; title: string }
+  | { type: 'article'; title: string; topic: string; body?: string; objective?: string; shortDescription?: string; sourceMaterial?: string; notes?: string; desiredLength?: string; platforms: Platform[] };
+
+class ApiRequestError extends Error {
+  constructor(message: string, readonly code: string) { super(message); this.name = 'ApiRequestError'; }
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof ApiRequestError) return error.code;
+  if (error instanceof DOMException && error.name === 'AbortError') return 'REQUEST_TIMEOUT';
+  return error instanceof Error ? error.name : 'UNKNOWN_ERROR';
+}
 
 const demoContents: ContentRecord[] = [{ id: 'demo-video', contentId: 'ANCV-VID-2026-001', type: 'video', title: 'Video mẫu ANCV', topic: 'An ninh doanh nghiệp', body: '', masterScript: 'MASTER SCRIPT được nhập từ bên ngoài hệ thống.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: 'demo-user', status: 'draft', platforms: ['youtube','facebook','tiktok','zalo','linkedin'].map((platform) => ({ platform: platform as Platform, mode: 'manual', status: 'manual_pending' })) }];
 function readLocal(): ContentRecord[] { try { return JSON.parse(localStorage.getItem('ancv-demo-contents') ?? 'null') ?? demoContents; } catch { return demoContents; } }
@@ -14,9 +29,22 @@ async function api<T>(path: string, init?: RequestInit, timeoutMs = 90_000): Pro
   try {
     const response = await fetch(`${backendUrl}${path}`, { ...init, signal: controller.signal, headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${token}`, ...init?.headers } });
     const result = response.status === 204 ? null : await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error((result as { message?: string; error?: string }).message ?? (result as { error?: string }).error ?? 'Yêu cầu thất bại.');
+    if (!response.ok) {
+      const payload = result as { message?: string; error?: string };
+      throw new ApiRequestError(payload.message ?? payload.error ?? 'Yêu cầu thất bại.', payload.error ?? `HTTP_${response.status}`);
+    }
     return result as T;
   } finally { clearTimeout(timer); }
+}
+
+async function trackedApi<T>(operation: TrackedOperation, path: string, init: RequestInit, context: { contentId?: string; sceneId?: string } = {}, timeoutMs = 90_000): Promise<T> {
+  const requestId = crypto.randomUUID();
+  try {
+    return await api<T>(path, { ...init, headers: { ...init.headers, 'x-request-id': requestId } }, timeoutMs);
+  } catch (error) {
+    console.error('ANCV_ACTION_ERROR', { operation, requestId, ...context, errorCode: errorCode(error), timestamp: new Date().toISOString() });
+    throw error;
+  }
 }
 
 export function subscribeContents(callback: (records: ContentRecord[]) => void): () => void {
@@ -53,26 +81,47 @@ export function subscribeMonthlyAIUsage(callback: (summary: { requests: number; 
   return onSnapshot(collection(firestore, 'aiUsage'), (snapshot) => { const records = snapshot.docs.map((item) => item.data() as AIUsageRecord).filter((item) => String(item.createdAt).startsWith(month)); callback({ requests: records.length, totalTokens: records.reduce((sum,item) => sum + Number(item.totalTokens ?? 0),0), images: records.reduce((sum,item) => sum + Number(item.imageCount ?? 0),0) }); });
 }
 
-export async function createContent(input: { type: ContentType; title: string; topic: string; body: string; masterScript?: string; objective?: string; shortDescription?: string; sourceMaterial?: string; notes?: string; desiredLength?: string; platforms: Platform[] }) {
-  const now = new Date(); let contentId = `ANCV-${input.type === 'video' ? 'VID' : 'ART'}-${now.getFullYear()}-LOCAL-${String(Date.now()).slice(-5)}`;
-  if (firebaseConfigured) contentId = (await api<{contentId:string}>('/v1/content/allocate-id', { method: 'POST', body: JSON.stringify({ type: input.type }) })).contentId;
-  const uid = auth?.currentUser?.uid ?? 'demo-user'; const record = { ...input, contentId, status: 'draft', createdAt: now.toISOString(), updatedAt: now.toISOString(), createdBy: uid, characterReferences: [], visualStyle: {}, platformCopies: {}, platforms: input.platforms.map((platform) => ({ platform, status: 'manual_pending' as const, mode: 'manual' as const })) };
-  if (!firebaseConfigured || !firestore) { writeLocal([{ id: crypto.randomUUID(), ...record }, ...readLocal()]); return; }
-  await addDoc(collection(firestore, 'contents'), { ...record, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+export function buildCreateContentPayload(input: CreateContentInput): CreateContentInput {
+  if (input.type === 'video') return { type: 'video', title: input.title.trim() };
+  return {
+    type: 'article', title: input.title.trim(), topic: input.topic.trim(), platforms: input.platforms,
+    ...(input.body !== undefined ? { body: input.body } : {}),
+    ...(input.objective !== undefined ? { objective: input.objective } : {}),
+    ...(input.shortDescription !== undefined ? { shortDescription: input.shortDescription } : {}),
+    ...(input.sourceMaterial !== undefined ? { sourceMaterial: input.sourceMaterial } : {}),
+    ...(input.notes !== undefined ? { notes: input.notes } : {}),
+    ...(input.desiredLength !== undefined ? { desiredLength: input.desiredLength } : {}),
+  };
+}
+
+export async function createContent(input: CreateContentInput): Promise<ContentRecord> {
+  const payload = buildCreateContentPayload(input);
+  if (firebaseConfigured) return (await trackedApi<{content:ContentRecord}>('create_content', '/v1/content', { method: 'POST', body: JSON.stringify(payload) })).content;
+  const now = new Date(); const id = crypto.randomUUID(); const videoPlatforms: Platform[] = ['youtube','tiktok','facebook','zalo','linkedin'];
+  const articlePlatforms = input.type === 'article' ? input.platforms : [];
+  const record: ContentRecord = {
+    id, contentId: `ANCV-${input.type === 'video' ? 'VID' : 'ART'}-${now.getFullYear()}-LOCAL-${String(Date.now()).slice(-5)}`,
+    type: input.type, title: input.title, topic: input.type === 'video' ? input.title : input.topic, body: input.type === 'article' ? (input.body ?? '') : '',
+    status: 'draft', createdAt: now.toISOString(), updatedAt: now.toISOString(), createdBy: 'demo-user', platformCopies: {},
+    platforms: (input.type === 'video' ? videoPlatforms : articlePlatforms).map((platform) => ({ platform, status: 'manual_pending', mode: 'manual' })),
+    ...(input.type === 'video' ? { characterReferences: [], visualStyle: {} } : {}),
+  };
+  writeLocal([record, ...readLocal()]); return record;
 }
 export async function updateContent(id: string, changes: Partial<ContentRecord>) { if (!firestore) { writeLocal(readLocal().map((item) => item.id === id ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item)); return; } await updateDoc(doc(firestore, 'contents', id), { ...changes, updatedAt: serverTimestamp() }); }
 export async function removeContent(id: string) { if (!firestore) { writeLocal(readLocal().filter((item) => item.id !== id)); return; } await updateDoc(doc(firestore, 'contents', id), { status: 'archived', testContent: true, updatedAt: serverTimestamp() }); }
 
-export async function createScene(contentId: string, scene: Partial<SceneRecord> & { title: string }) { return api<SceneRecord>(`/v1/content/${contentId}/scenes`, { method: 'POST', body: JSON.stringify(scene) }); }
+export async function createScene(contentId: string, scene: Partial<SceneRecord> & { title: string }) { return trackedApi<SceneRecord>('create_scenes', `/v1/content/${contentId}/scenes`, { method: 'POST', body: JSON.stringify(scene) }, { contentId }); }
 export async function saveScene(contentId: string, sceneId: string, changes: Partial<SceneRecord>) { return api(`/v1/content/${contentId}/scenes/${sceneId}`, { method: 'PATCH', body: JSON.stringify(changes) }); }
 export async function deleteScene(contentId: string, sceneId: string) { return api(`/v1/content/${contentId}/scenes/${sceneId}`, { method: 'DELETE' }); }
 export async function duplicateScene(contentId: string, sceneId: string) { return api<SceneRecord>(`/v1/content/${contentId}/scenes/${sceneId}/duplicate`, { method: 'POST', body: '{}' }); }
 export async function reorderScenes(contentId: string, sceneIds: string[]) { return api(`/v1/content/${contentId}/scenes/reorder`, { method: 'POST', body: JSON.stringify({ sceneIds }) }); }
-export async function breakdownScenes(contentId: string, replaceExisting = false) { return api<{jobId:string;scenes:SceneRecord[]}>(`/v1/ai/content/${contentId}/scenes/breakdown`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
+export async function breakdownScenes(contentId: string, replaceExisting = false) { return trackedApi<{jobId:string;scenes:SceneRecord[]}>('create_scenes', `/v1/ai/content/${contentId}/scenes/breakdown`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, { contentId }, 120_000); }
 export async function regenerateScene(contentId: string, sceneId: string) { return api<{scene:SceneRecord}>(`/v1/ai/content/${contentId}/scenes/${sceneId}/regenerate`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }) }, 120_000); }
 export async function regeneratePrompt(contentId: string, sceneId: string) { return api<{generationPrompt:string}>(`/v1/ai/content/${contentId}/scenes/${sceneId}/prompt`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }) }, 120_000); }
-export async function createFlowJob(contentDocId: string, sceneId: string, flowAccountId: string) { return api<{job:FlowJobRecord}>('/v1/flow/jobs', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, flowAccountId }) }); }
+export async function createFlowJob(contentDocId: string, sceneId: string, flowAccountId: string, current: { generationPrompt: string; durationEstimate: number; aspectRatio: '9:16' | '16:9' }) { return trackedApi<{job:FlowJobRecord}>('create_flow_job', '/v1/flow/jobs', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, flowAccountId, ...current }) }, { contentId: contentDocId, sceneId }); }
 export async function openSceneFolder(contentDocId: string, sceneId: string) { return api('/v1/flow/local-commands/open-scene-folder', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, agentId: 'ancv-windows-01' }) }); }
+export async function openVideoFolder(contentDocId: string) { return api('/v1/flow/local-commands/open-video-folder', { method: 'POST', body: JSON.stringify({ contentDocId, agentId: 'ancv-windows-01' }) }); }
 export async function generateArticle(contentId: string, replaceExisting = false) { return api<{article:{title:string;body:string}}>(`/v1/ai/content/${contentId}/article`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function generatePlatformCopy(contentId: string, platform: Platform, replaceExisting = false) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function approvePlatformCopy(contentId: string, platform: Platform) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}/approve`, { method: 'POST', body: '{}' }); }

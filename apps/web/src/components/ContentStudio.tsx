@@ -9,7 +9,6 @@ import {
   Download,
   FileImage,
   FolderOpen,
-  GripVertical,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -59,6 +58,7 @@ import {
   subscribeFlowJobs,
   subscribeScenes,
   openSceneFolder,
+  openVideoFolder,
   setContentStatus,
   updateContent,
   uploadMedia,
@@ -164,16 +164,26 @@ export function ContentStudioPage({
   type,
   contents,
   localAgents,
+  openContentId,
+  onOpened,
   onCreate,
   onToast,
 }: {
   type: ContentType;
   contents: ContentRecord[];
   localAgents: LocalAgentRecord[];
+  openContentId: string | null;
+  onOpened: () => void;
   onCreate: () => void;
   onToast: (text: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (openContentId && contents.some((item) => item.id === openContentId)) {
+      setSelectedId(openContentId);
+      onOpened();
+    }
+  }, [contents, onOpened, openContentId]);
   const selected = contents.find((item) => item.id === selectedId) ?? null;
   return (
     <>
@@ -278,8 +288,8 @@ function StudioDrawer({
   onClose: () => void;
   onToast: (text: string) => void;
 }) {
-  const [tab, setTab] = useState<"editor" | "scenes" | "media" | "copies">(
-    "editor",
+  const [tab, setTab] = useState<"script" | "generate" | "complete" | "editor" | "media" | "copies">(
+    content.type === "video" ? "script" : "editor",
   );
   const [scenes, setScenes] = useState<SceneRecord[]>([]);
   const [assets, setAssets] = useState<MediaAssetRecord[]>([]);
@@ -324,47 +334,30 @@ function StudioDrawer({
             <X />
           </button>
         </div>
-        <div className="studio-tabs">
-          <button
-            className={tab === "editor" ? "active" : ""}
-            onClick={() => setTab("editor")}
-          >
-            Nội dung
-          </button>
-          {content.type === "video" && (
+        <div className={`studio-tabs ${content.type === "video" ? "video-steps" : ""}`}>
+          {content.type === "video" ? <>
             <button
-              className={tab === "scenes" ? "active" : ""}
-              onClick={() => setTab("scenes")}
+              className={tab === "script" ? "active" : ""}
+              onClick={() => setTab("script")}
             >
-              Scene ({scenes.length})
+              <b>1</b> Kịch bản
             </button>
-          )}
-          <button
-            className={tab === "media" ? "active" : ""}
-            onClick={() => setTab("media")}
-          >
-            Media ({assets.length})
-          </button>
-          <button
-            className={tab === "copies" ? "active" : ""}
-            onClick={() => setTab("copies")}
-          >
-            Bản nền tảng
-          </button>
+            <button className={tab === "generate" ? "active" : ""} onClick={() => setTab("generate")}>
+              <b>2</b> Tạo video <span>{scenes.length}</span>
+            </button>
+            <button className={tab === "complete" ? "active" : ""} onClick={() => setTab("complete")}>
+              <b>3</b> Hoàn tất
+            </button>
+          </> : <>
+            <button className={tab === "editor" ? "active" : ""} onClick={() => setTab("editor")}>Nội dung</button>
+            <button className={tab === "media" ? "active" : ""} onClick={() => setTab("media")}>Media ({assets.length})</button>
+            <button className={tab === "copies" ? "active" : ""} onClick={() => setTab("copies")}>Bản nền tảng</button>
+          </>}
         </div>
         <div className="drawer-body studio-body">
-          {tab === "editor" &&
-            (content.type === "video" ? (
-              <VideoEditor
-                content={content}
-                scenes={scenes}
-                busy={busy}
-                act={act}
-              />
-            ) : (
-              <ArticleEditor content={content} busy={busy} act={act} />
-            ))}
-          {tab === "scenes" && (
+          {content.type === "video" && tab === "script" && <VideoEditor content={content} scenes={scenes} busy={busy} act={act} />}
+          {content.type === "article" && tab === "editor" && <ArticleEditor content={content} busy={busy} act={act} />}
+          {content.type === "video" && tab === "generate" && (
             <SceneEditor
               content={content}
               scenes={scenes}
@@ -376,7 +369,7 @@ function StudioDrawer({
               act={act}
             />
           )}
-          {tab === "media" && (
+          {content.type === "article" && tab === "media" && (
             <MediaPanel
               content={content}
               scenes={scenes}
@@ -385,12 +378,17 @@ function StudioDrawer({
               act={act}
             />
           )}
-          {tab === "copies" && (
+          {content.type === "article" && tab === "copies" && (
             <CopyEditor content={content} busy={busy} act={act} />
           )}
-          <section className="approval-bar">
+          {content.type === "video" && tab === "complete" && <>
+            <MediaPanel content={content} scenes={scenes} assets={assets} busy={busy} act={act} />
+            <section className="completion-copies"><div className="section-title"><div><span className="step-label">Bản nền tảng</span><h3>Nội dung đăng</h3></div></div></section>
+            <CopyEditor content={content} busy={busy} act={act} />
+          </>}
+          {(content.type === "article" || tab === "complete") && <section className="approval-bar">
             <div>
-              <strong>Duyệt Content</strong>
+              <strong>Duyệt Content cuối cùng</strong>
               <p>Chỉ Content đã duyệt mới có thể chuyển sang sẵn sàng đăng.</p>
             </div>
             <button
@@ -419,7 +417,7 @@ function StudioDrawer({
             >
               <Check size={15} /> Sẵn sàng đăng
             </button>
-          </section>
+          </section>}
         </div>
       </aside>
     </>
@@ -437,6 +435,7 @@ function VideoEditor({
   busy: string;
   act: (k: string, a: () => Promise<unknown>, d: string) => void;
 }) {
+  const [title, setTitle] = useState(content.title);
   const [script, setScript] = useState(content.masterScript ?? "");
   const [style, setStyle] = useState(content.visualStyle ?? {});
   const [characters, setCharacters] = useState<CharacterReference[]>(
@@ -449,6 +448,7 @@ function VideoEditor({
     setDirty(true);
   };
   useEffect(() => {
+    setTitle(content.title);
     setScript(content.masterScript ?? "");
     setStyle(content.visualStyle ?? {});
     setCharacters(content.characterReferences ?? []);
@@ -456,6 +456,7 @@ function VideoEditor({
     saveVersion.current = 0;
   }, [
     content.id,
+    content.title,
     content.masterScript,
     content.visualStyle,
     content.characterReferences,
@@ -465,6 +466,8 @@ function VideoEditor({
     const version = saveVersion.current;
     const timer = setTimeout(() => {
       updateContent(content.id, {
+        title,
+        topic: title,
         masterScript: script,
         visualStyle: style,
         characterReferences: characters,
@@ -475,7 +478,7 @@ function VideoEditor({
         .catch(() => undefined);
     }, 1200);
     return () => clearTimeout(timer);
-  }, [dirty, script, style, characters, content.id]);
+  }, [dirty, title, script, style, characters, content.id]);
   const breakdown = () => {
     const replace = scenes.length > 0;
     if (
@@ -497,7 +500,7 @@ function VideoEditor({
         <div className="section-title">
           <div>
             <span className="step-label">Bước 1</span>
-            <h3>MASTER SCRIPT</h3>
+            <h3>Kịch bản</h3>
             <small>{dirty ? "Đang tự lưu…" : "Đã lưu"}</small>
           </div>
           <button
@@ -508,9 +511,14 @@ function VideoEditor({
             <Sparkles size={15} />
             {busy === "breakdown"
               ? "Đang phân tích…"
-              : "Phân tích thành Scene"}
+              : "Tạo Scene"}
           </button>
         </div>
+        <label>
+          Tên Video
+          <input value={title} onChange={(event) => { setTitle(event.target.value); touch(); }} />
+        </label>
+        <label>MASTER SCRIPT</label>
         <textarea
           className="long-editor"
           value={script}
@@ -539,18 +547,6 @@ function VideoEditor({
                 }}
               />
             </label>
-            <SegmentedControl
-              label="Tỷ lệ khung hình mặc định"
-              value={style.aspectRatio === "9:16" ? "9:16" : "16:9"}
-              options={[
-                { value: "9:16", label: "9:16" },
-                { value: "16:9", label: "16:9" },
-              ]}
-              onChange={(aspectRatio) => {
-                setStyle({ ...style, aspectRatio });
-                touch();
-              }}
-            />
             <label>
               Ánh sáng
               <input
@@ -752,14 +748,37 @@ function SceneEditor({
   act: (k: string, a: () => Promise<unknown>, d: string) => void;
 }) {
   const [drafts, setDrafts] = useState<SceneRecord[]>(scenes);
-  const [selectedAccounts, setSelectedAccounts] = useState<
-    Record<string, string>
-  >({});
-  useEffect(() => setDrafts(scenes), [scenes]);
-  const patch = (index: number, change: Partial<SceneRecord>) =>
-    setDrafts(
-      drafts.map((item, i) => (i === index ? { ...item, ...change } : item)),
-    );
+  const pendingChanges = useRef<Record<string, Partial<SceneRecord>>>({});
+  const saveTimers = useRef<Record<string, number>>({});
+  const [saveStates, setSaveStates] = useState<Record<string, "saving" | "saved" | "error">>({});
+  useEffect(() => {
+    setDrafts(scenes.map((scene) => ({ ...scene, ...(pendingChanges.current[scene.id] ?? {}) })));
+  }, [scenes]);
+  useEffect(() => () => Object.values(saveTimers.current).forEach((timer) => window.clearTimeout(timer)), []);
+  const persistPending = async (sceneId: string) => {
+    const changes = pendingChanges.current[sceneId];
+    if (!changes || Object.keys(changes).length === 0) return;
+    delete pendingChanges.current[sceneId];
+    window.clearTimeout(saveTimers.current[sceneId]);
+    setSaveStates((current) => ({ ...current, [sceneId]: "saving" }));
+    try {
+      await saveScene(content.id, sceneId, changes);
+      setSaveStates((current) => ({ ...current, [sceneId]: "saved" }));
+    } catch (error) {
+      pendingChanges.current[sceneId] = { ...changes, ...(pendingChanges.current[sceneId] ?? {}) };
+      setSaveStates((current) => ({ ...current, [sceneId]: "error" }));
+      throw error;
+    }
+  };
+  const patch = (index: number, change: Partial<SceneRecord>) => {
+    const currentScene = drafts[index];
+    if (!currentScene) return;
+    setDrafts((current) => current.map((item, i) => (i === index ? { ...item, ...change } : item)));
+    pendingChanges.current[currentScene.id] = { ...(pendingChanges.current[currentScene.id] ?? {}), ...change };
+    setSaveStates((current) => ({ ...current, [currentScene.id]: "saving" }));
+    window.clearTimeout(saveTimers.current[currentScene.id]);
+    saveTimers.current[currentScene.id] = window.setTimeout(() => { persistPending(currentScene.id).catch(() => undefined); }, 800);
+  };
   const move = (index: number, delta: number) => {
     const target = index + delta;
     if (target < 0 || target >= drafts.length) return;
@@ -784,6 +803,10 @@ function SceneEditor({
     flowAccounts.find((item) => item.status === "ready")?.id ??
     flowAccounts[0]?.id ??
     "";
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const accountId = selectedAccountId || defaultAccount;
+  const account = flowAccounts.find((item) => item.id === accountId);
+  const currentRatio = content.visualStyle?.aspectRatio === "9:16" ? "9:16" : "16:9";
   const localAgent =
     localAgents.find((item) => item.id === "ancv-windows-01") ?? localAgents[0];
   const [heartbeatNow, setHeartbeatNow] = useState(() => Date.now());
@@ -795,23 +818,23 @@ function SceneEditor({
     localAgent?.status === "online" &&
     heartbeatNow - new Date(localAgent.lastSeen).getTime() < 45000,
   );
+  const queueScene = async (scene: SceneRecord) => {
+    await persistPending(scene.id);
+    const durationEstimate = [4, 6, 8, 10].includes(scene.durationEstimate) ? scene.durationEstimate : 6;
+    await createFlowJob(content.id, scene.id, accountId, {
+      generationPrompt: scene.generationPrompt.trim(),
+      durationEstimate,
+      aspectRatio: currentRatio,
+    });
+  };
   return (
     <>
       <section>
         <div className="section-title">
           <div>
-            <h3>Scene Editor</h3>
-            <div>
-              <Badge tone={localAgentOnline ? "success" : "danger"}>
-                {localAgentOnline ? "Local Agent Online" : "Local Agent Offline"}
-              </Badge>{" "}
-              <Badge tone={localAgent?.bridgeStatus === "connected" ? "success" : "warning"}>
-                {localAgent?.bridgeStatus === "connected" ? "Bridge đã kết nối" : "Bridge chưa kết nối"}
-              </Badge>
-            </div>
-            <small>
-              Google Flow Worker là experimental; chỉ xử lý 01 scene/lần.
-            </small>
+            <span className="step-label">Bước 2</span>
+            <h3>Tạo video</h3>
+            <small>Mỗi Scene tạo đúng một Video Raw. Google Flow vẫn là tính năng thử nghiệm.</small>
           </div>
           <button
             className="small-action"
@@ -827,21 +850,37 @@ function SceneEditor({
             Thêm scene
           </button>
         </div>
+        <div className="project-flow-settings">
+          <SegmentedControl
+            label="Tỷ lệ"
+            value={currentRatio}
+            options={[{ value: "9:16", label: "9:16" }, { value: "16:9", label: "16:9" }]}
+            onChange={(aspectRatio) => act("project-ratio", () => updateContent(content.id, { visualStyle: { ...(content.visualStyle ?? {}), aspectRatio } }), `Đã chọn tỷ lệ ${aspectRatio}.`)}
+            disabled={Boolean(busy)}
+          />
+          <label>
+            Tài khoản Flow
+            <select value={accountId} onChange={(event) => setSelectedAccountId(event.target.value)}>
+              <option value="">Chưa chọn tài khoản Flow</option>
+              {flowAccounts.map((item) => <option key={item.id} value={item.id}>{flowAccountLabel(item)} — {flowAccountStatusLabels[item.status]}</option>)}
+            </select>
+          </label>
+          <Badge tone={localAgentOnline ? "success" : "danger"}>
+            {localAgentOnline ? "Máy xử lý sẵn sàng" : "Máy xử lý đang offline"}
+          </Badge>
+        </div>
       </section>
       {drafts.length === 0 ? (
         <section>
-          <EmptyState text="Chưa có scene. Mở tab Nội dung và bấm Phân chia cảnh bằng AI." />
+          <EmptyState text="Chưa có Scene. Mở bước Kịch bản và bấm Tạo Scene." />
         </section>
       ) : (
         drafts.map((scene, index) => {
-          const accountId = selectedAccounts[scene.id] ?? defaultAccount;
-          const account = flowAccounts.find((item) => item.id === accountId);
           const job = flowJobs.find((item) => item.sceneId === scene.id);
           const active = job && ["queued", "processing"].includes(job.status);
           return (
             <section className="scene-card" key={scene.id}>
               <div className="scene-card-head">
-                <GripVertical size={16} />
                 <div className="scene-heading">
                   <strong>Scene {String(scene.sceneNumber).padStart(2, "0")}</strong>
                   <input
@@ -850,11 +889,9 @@ function SceneEditor({
                     onChange={(e) => patch(index, { title: e.target.value })}
                   />
                 </div>
-                <Badge
-                  tone={scene.status === "approved" ? "success" : "neutral"}
-                >
-                  {scene.status === "approved" ? "Đã duyệt" : "Bản nháp"}
-                </Badge>
+                <small className={`scene-save-state ${saveStates[scene.id] === "error" ? "error" : ""}`}>
+                  {saveStates[scene.id] === "saving" ? "Đang tự lưu…" : saveStates[scene.id] === "error" ? "Chưa lưu được" : "Đã lưu"}
+                </small>
                 {job && (
                   <Badge
                     tone={
@@ -868,51 +905,10 @@ function SceneEditor({
                     {flowStatusLabels[job.status]}
                   </Badge>
                 )}
-                <span className="grow" />
-                <button aria-label="Di chuyển lên" onClick={() => move(index, -1)}>↑</button>
-                <button aria-label="Di chuyển xuống" onClick={() => move(index, 1)}>↓</button>
-                <button
-                  aria-label="Duplicate Scene"
-                  title="Duplicate"
-                  onClick={() =>
-                    act(
-                      `duplicate-${scene.id}`,
-                      () => duplicateScene(content.id, scene.id),
-                      "Đã duplicate scene.",
-                    )
-                  }
-                >
-                  <Copy size={14} />
-                </button>
-                <button
-                  aria-label="Xóa Scene"
-                  title="Xóa"
-                  onClick={() => {
-                    if (window.confirm("Xóa scene này?"))
-                      act(
-                        `delete-${scene.id}`,
-                        () => deleteScene(content.id, scene.id),
-                        "Đã xóa scene.",
-                      );
-                  }}
-                >
-                  <Trash2 size={14} />
-                </button>
               </div>
-              <label className="scene-narration">
-                Narration
-                <textarea
-                  rows={3}
-                  value={scene.narration}
-                  onChange={(e) => patch(index, { narration: e.target.value })}
-                />
-              </label>
               <FlowComposer
-                content={content}
                 scene={scene}
-                accountId={accountId}
                 account={account}
-                flowAccounts={flowAccounts}
                 active={Boolean(active)}
                 localAgentOnline={localAgentOnline}
                 busy={busy}
@@ -920,42 +916,21 @@ function SceneEditor({
                 onPromptChange={(generationPrompt) =>
                   patch(index, { generationPrompt })
                 }
-                onDurationChange={(durationEstimate) => {
-                  patch(index, { durationEstimate });
-                  act(
-                    `duration-${scene.id}`,
-                    () => saveScene(content.id, scene.id, { durationEstimate }),
-                    `Đã chọn thời lượng ${durationEstimate}s.`,
-                  );
-                }}
-                onRatioChange={(aspectRatio) =>
-                  act(
-                    `ratio-${scene.id}`,
-                    () =>
-                      updateContent(content.id, {
-                        visualStyle: {
-                          ...(content.visualStyle ?? {}),
-                          aspectRatio,
-                        },
-                      }),
-                    `Đã chọn tỷ lệ ${aspectRatio}.`,
-                  )
-                }
-                onAccountChange={(nextAccountId) =>
-                  setSelectedAccounts({
-                    ...selectedAccounts,
-                    [scene.id]: nextAccountId,
-                  })
-                }
+                onDurationChange={(durationEstimate) => patch(index, { durationEstimate })}
                 onGenerate={() =>
                   act(
                     `flow-${scene.id}`,
-                    () => createFlowJob(content.id, scene.id, accountId),
+                    () => queueScene(scene),
                     "Đã đưa scene vào hàng chờ Flow Worker.",
                   )
                 }
               />
+              <TakeList content={content} scene={scene} assets={assets} busy={busy} act={act} />
               <AdvancedSection label="Chi tiết Scene">
+                <label>
+                  Narration
+                  <textarea rows={3} value={scene.narration} onChange={(e) => patch(index, { narration: e.target.value })} />
+                </label>
                 <label>
                   Mô tả hình ảnh
                   <textarea
@@ -994,39 +969,14 @@ function SceneEditor({
                     }
                   />
                 </label>
-              </AdvancedSection>
-              <div className="scene-footer-actions">
-                <button
-                  className="secondary"
-                  onClick={() => navigator.clipboard.writeText(scene.generationPrompt)}
-                >
-                  <Clipboard size={14} /> Copy Prompt
-                </button>
-                <button
-                  className="secondary"
-                  onClick={() =>
-                    act(
-                      `approve-${scene.id}`,
-                      () => saveScene(content.id, scene.id, { status: "approved" }),
-                      "Đã duyệt scene.",
-                    )
-                  }
-                >
-                  <Check size={14} /> Duyệt Scene
-                </button>
-                <details className="scene-more-menu">
-                  <summary aria-label="Thêm tác vụ Scene"><MoreHorizontal size={17} /></summary>
-                  <div>
+                <div className="scene-detail-actions">
+                  <button className="secondary" onClick={() => navigator.clipboard.writeText(scene.generationPrompt)}><Clipboard size={14} /> Copy Prompt</button>
+                  <button className="secondary" onClick={() => move(index, -1)}>↑ Di chuyển lên</button>
+                  <button className="secondary" onClick={() => move(index, 1)}>↓ Di chuyển xuống</button>
+                  <button className="secondary" onClick={() => act(`duplicate-${scene.id}`, () => duplicateScene(content.id, scene.id), "Đã duplicate scene.")}><Copy size={14} /> Duplicate</button>
+                  <button className="secondary" onClick={() => { if (window.confirm("Xóa scene này?")) act(`delete-${scene.id}`, () => deleteScene(content.id, scene.id), "Đã xóa scene."); }}><Trash2 size={14} /> Xóa</button>
                     <button
-                      onClick={() =>
-                        act(
-                          `save-${scene.id}`,
-                          () => saveScene(content.id, scene.id, scene),
-                          "Đã lưu scene.",
-                        )
-                      }
-                    ><Save size={14} /> Lưu Scene</button>
-                    <button
+                      className="secondary"
                       disabled={!!busy}
                       onClick={() =>
                         act(
@@ -1037,6 +987,7 @@ function SceneEditor({
                       }
                     ><RefreshCw size={14} /> Regenerate Prompt</button>
                     <button
+                      className="secondary"
                       disabled={!!busy}
                       onClick={() =>
                         act(
@@ -1046,16 +997,8 @@ function SceneEditor({
                         )
                       }
                     ><Sparkles size={14} /> Regenerate Scene</button>
-                  </div>
-                </details>
-              </div>
-              <TakeList
-                content={content}
-                scene={scene}
-                assets={assets}
-                busy={busy}
-                act={act}
-              />
+                </div>
+              </AdvancedSection>
             </section>
           );
         })
@@ -1065,63 +1008,46 @@ function SceneEditor({
 }
 
 function FlowComposer({
-  content,
   scene,
-  accountId,
   account,
-  flowAccounts,
   active,
   localAgentOnline,
   busy,
   job,
   onPromptChange,
   onDurationChange,
-  onRatioChange,
-  onAccountChange,
   onGenerate,
 }: {
-  content: ContentRecord;
   scene: SceneRecord;
-  accountId: string;
   account?: FlowAccountRecord;
-  flowAccounts: FlowAccountRecord[];
   active: boolean;
   localAgentOnline: boolean;
   busy: string;
   job?: FlowJobRecord;
   onPromptChange: (value: string) => void;
   onDurationChange: (value: number) => void;
-  onRatioChange: (value: string) => void;
-  onAccountChange: (value: string) => void;
   onGenerate: () => void;
 }) {
-  const currentRatio = content.visualStyle?.aspectRatio || "16:9";
-  const ratioOptions = ["9:16", "16:9"];
-  if (!ratioOptions.includes(currentRatio)) ratioOptions.push(currentRatio);
   const durationOptions = [4, 6, 8, 10];
-  if (!durationOptions.includes(scene.durationEstimate))
-    durationOptions.push(scene.durationEstimate);
-  durationOptions.sort((a, b) => a - b);
+  const selectedDuration = durationOptions.includes(scene.durationEstimate) ? scene.durationEstimate : 6;
   const disabledReason = !scene.generationPrompt.trim()
     ? "Nhập Prompt Google Flow để tiếp tục."
     : !localAgentOnline
-      ? "Local Agent đang offline."
+      ? "Máy xử lý đang offline."
       : !account
         ? "Chưa chọn tài khoản Flow."
         : account.status !== "ready"
-          ? `${account.label} — ${flowAccountStatusLabels[account.status]}`
+          ? "Tài khoản Flow cần đăng nhập lại."
           : active
-            ? "Scene đang được xử lý."
+            ? "Đang tạo video…"
             : "";
   const disabled = Boolean(busy || disabledReason);
   return (
     <div className="flow-composer">
       <div className="flow-composer-title">
         <div>
-          <span className="step-label">Bước 3</span>
           <strong>Prompt Google Flow</strong>
         </div>
-        <div className="composer-mode"><Video size={14} /> Video</div>
       </div>
       <textarea
         className="prompt-editor"
@@ -1132,41 +1058,19 @@ function FlowComposer({
       />
       <div className="flow-composer-controls">
         <SegmentedControl
-          label="Tỷ lệ"
-          value={currentRatio}
-          options={ratioOptions.map((value) => ({ value, label: value }))}
-          onChange={onRatioChange}
-          disabled={Boolean(busy)}
-        />
-        <SegmentedControl
           label="Thời lượng"
-          value={scene.durationEstimate}
+          value={selectedDuration}
           options={durationOptions.map((value) => ({ value, label: `${value}s` }))}
           onChange={onDurationChange}
           disabled={Boolean(busy)}
         />
-        <label className="composer-account">
-          <span>Tài khoản</span>
-          <select value={accountId} onChange={(e) => onAccountChange(e.target.value)}>
-            <option value="">Chưa chọn tài khoản Flow</option>
-            {flowAccounts.map((item) => (
-              <option key={item.id} value={item.id}>
-                {flowAccountLabel(item)} — {flowAccountStatusLabels[item.status]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="composer-control composer-output">
-          <span>Output</span>
-          <div className="fixed-output" aria-label="Output cố định x1">x1</div>
-        </div>
         <button
           className="primary composer-generate"
           disabled={disabled}
-          title={disabledReason || "Tạo đúng 01 video cho Scene này"}
+          title={disabledReason || "Tạo video cho Scene này"}
           onClick={onGenerate}
         >
-          {active ? "Đang xử lý…" : "Tạo video"}
+          {active ? "Đang tạo video…" : "Tạo video"}
           {!active && <ArrowRight size={16} />}
         </button>
       </div>
@@ -1199,7 +1103,6 @@ function TakeList({
     <div className="take-box">
       <div className="take-box-head">
         <div>
-          <span className="step-label">Bước 4</span>
           <strong>Video Raw</strong>
         </div>
         <button
@@ -1213,7 +1116,7 @@ function TakeList({
             )
           }
         >
-          <FolderOpen size={14} /> Mở thư mục
+          <FolderOpen size={14} /> Mở file/thư mục
         </button>
       </div>
       {takes.length === 0 ? (
@@ -1235,7 +1138,7 @@ function TakeList({
               <strong>Scene {String(scene.sceneNumber).padStart(2, "0")} — Take {String(take.takeNumber ?? 1).padStart(2, "0")}</strong>
               <span>{take.fileName}</span>
               <Badge tone={take.storageType === "local" ? "info" : "neutral"}>
-                {take.storageType === "local" ? "Local" : "Cloud"}
+                {take.storageType === "local" ? "Lưu trên máy" : "Cloud"}
               </Badge>
             </div>
             <div className="take-actions">
@@ -1368,9 +1271,10 @@ function MediaPanel({
                 <h3>CapCut / Hậu kỳ</h3>
                 <small>CapCut nằm ngoài hệ thống. Dùng danh sách Scene để tổ chức file.</small>
               </div>
-              <button className="secondary" onClick={download}>
-                <Download size={14} /> Tải danh sách Scene
-              </button>
+              <div className="handoff-actions">
+                <button className="secondary" onClick={() => act("open-video-folder", () => openVideoFolder(content.id), "Đã gửi lệnh mở thư mục Video.")}><FolderOpen size={14} /> Mở thư mục Video</button>
+                <button className="secondary" onClick={download}><Download size={14} /> Tải danh sách Scene</button>
+              </div>
             </div>
             <button
               className="secondary"

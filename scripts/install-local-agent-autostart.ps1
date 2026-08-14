@@ -9,6 +9,6 @@ $command = "@echo off`r`ncd /d `"$repo`"`r`nnpm.cmd run local:agent >> `"$logPat
 [IO.File]::WriteAllText($launcher, $command, [Text.UTF8Encoding]::new($false))
 $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"`"$launcher`"`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Description 'ANCV Local Agent: Firestore jobs, Browser Bridge, local-first media.' -Force | Out-Null
 Write-Output "Scheduled task installed: $TaskName"
