@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OPENAI_MAX_RETRIES, OpenAIConfigurationError, OpenAIProvider, scenesResponseSchema, validatePlatformCopy } from '../src/services/openai-provider.js';
+import { OPENAI_MAX_RETRIES, OpenAIConfigurationError, OpenAIProvider, articleResponseSchema, scenesResponseSchema, validatePlatformCopy } from '../src/services/openai-provider.js';
 
 const profile = { companyName:'', brandName:'', website:'', introduction:'', services:'', serviceAreas:'', contact:'', toneOfVoice:'', defaultCta:'', approvedFacts:'' };
 
@@ -17,6 +17,11 @@ describe('OpenAI provider', () => {
     expect(scenesResponseSchema.parse({ scenes: [{ sceneNumber:1,title:'Mở đầu',durationEstimate:5,narration:'Lời dẫn',visualDescription:'Cổng doanh nghiệp',cameraDirection:'Wide shot',environment:'Ban ngày',characters:[],continuityNotes:'Giữ ánh sáng',generationPrompt:'Cinematic wide shot',status:'draft' }] }).scenes).toHaveLength(1);
   });
   it('limits SDK retries to protect cost', () => expect(OPENAI_MAX_RETRIES).toBe(1));
+  it('validates structured SEO article fields and rejects invalid slugs', () => {
+    const article = { seoTitle: 'Dịch vụ bảo vệ doanh nghiệp an toàn, chuyên nghiệp', h1: 'Giải pháp bảo vệ doanh nghiệp phù hợp nhu cầu thực tế', slug: 'giai-phap-bao-ve-doanh-nghiep', metaDescription: 'Tìm hiểu cách xây dựng phương án bảo vệ doanh nghiệp phù hợp với môi trường vận hành và nhu cầu an ninh thực tế.', focusKeyword: 'bảo vệ doanh nghiệp', body: `Mở bài ${'nội dung hữu ích '.repeat(70)}\n\n## Nhu cầu an ninh\nChi tiết.\n\n### Cách lựa chọn\nChi tiết.\n\nLiên hệ để trao đổi.`, suggestedInternalLinks: [], faq: [], imageAltTextSuggestions: ['Nhân viên bảo vệ quan sát khu vực làm việc'] };
+    expect(articleResponseSchema.parse(article).slug).toBe('giai-phap-bao-ve-doanh-nghiep');
+    expect(() => articleResponseSchema.parse({ ...article, slug: 'Slug Có Dấu' })).toThrow();
+  });
   it('enforces exactly one TikTok sentence', () => {
     expect(validatePlatformCopy('tiktok', { title: '', text: 'Một câu ngắn.' }).text).toBe('Một câu ngắn.');
     expect(() => validatePlatformCopy('tiktok', { title: '', text: 'Câu một. Câu hai.' })).toThrow('OPENAI_TIKTOK_ONE_SENTENCE_REQUIRED');

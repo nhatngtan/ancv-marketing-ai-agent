@@ -102,6 +102,34 @@ export interface ContentRecord extends AuditFields {
   approvedAt?: string;
   approvedBy?: string;
   flowProjectUrl?: string;
+  articleSeo?: ArticleSeoData;
+}
+
+export interface ArticleSeoFaq {
+  question: string;
+  answer: string;
+}
+
+export interface ArticleSeoData {
+  seoTitle: string;
+  h1: string;
+  slug: string;
+  metaDescription: string;
+  focusKeyword: string;
+  suggestedInternalLinks: string[];
+  faq: ArticleSeoFaq[];
+  imageAltTextSuggestions: string[];
+}
+
+export interface SeoQualityItem {
+  key: 'seo_title' | 'meta_description' | 'h1' | 'headings' | 'focus_keyword' | 'keyword_natural' | 'cta' | 'alt_text' | 'slug';
+  label: string;
+  passed: boolean;
+}
+
+export interface SeoQualityResult {
+  checks: SeoQualityItem[];
+  warnings: string[];
 }
 
 export interface PlatformCopy {
@@ -180,6 +208,9 @@ export interface MediaAssetRecord extends AuditFields {
   fileSize?: number;
   mimeType?: string;
   checksumSha256?: string;
+  altText?: string;
+  caption?: string;
+  mediaTitle?: string;
 }
 
 export interface LocalFinalCandidate {
@@ -391,6 +422,49 @@ export function aggregatePublishingStatus(publications: PlatformPublication[]): 
   if (completed === publications.length) return 'published';
   if (completed > 0) return 'partially_published';
   return 'approved';
+}
+
+export function isValidArticleSlug(value: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
+}
+
+function normalizedOccurrences(text: string, keyword: string): number {
+  const normalizedText = text.normalize('NFC').toLocaleLowerCase('vi');
+  const normalizedKeyword = keyword.trim().normalize('NFC').toLocaleLowerCase('vi');
+  if (!normalizedKeyword) return 0;
+  return normalizedText.split(normalizedKeyword).length - 1;
+}
+
+export function evaluateArticleSeo(input: { seo?: Partial<ArticleSeoData>; body: string; selectedImageAltText?: string }): SeoQualityResult {
+  const seo = input.seo ?? {};
+  const body = input.body.trim();
+  const keyword = seo.focusKeyword?.trim() ?? '';
+  const keywordCount = normalizedOccurrences(`${seo.seoTitle ?? ''}\n${seo.h1 ?? ''}\n${body}`, keyword);
+  const wordCount = body.split(/\s+/).filter(Boolean).length;
+  const keywordNatural = Boolean(keyword) && keywordCount >= 1 && keywordCount <= Math.max(4, Math.ceil(wordCount * 0.03));
+  const hasHeadings = /^#{2,3}\s+\S+/m.test(body);
+  const hasCta = /\b(liên hệ|đăng ký|tìm hiểu|gọi|trao đổi|nhận tư vấn)\b/iu.test(body);
+  const checks: SeoQualityItem[] = [
+    { key: 'seo_title', label: 'Có SEO Title', passed: Boolean(seo.seoTitle?.trim()) },
+    { key: 'meta_description', label: 'Có Meta Description', passed: Boolean(seo.metaDescription?.trim()) },
+    { key: 'h1', label: 'Có H1', passed: Boolean(seo.h1?.trim()) },
+    { key: 'headings', label: 'Có H2/H3', passed: hasHeadings },
+    { key: 'focus_keyword', label: 'Có Focus Keyword', passed: Boolean(keyword) },
+    { key: 'keyword_natural', label: 'Focus Keyword xuất hiện tự nhiên', passed: keywordNatural },
+    { key: 'cta', label: 'Có CTA', passed: hasCta },
+    { key: 'alt_text', label: 'Có Alt Text cho ảnh đã chọn', passed: Boolean(input.selectedImageAltText?.trim()) },
+    { key: 'slug', label: 'Slug hợp lệ', passed: isValidArticleSlug(seo.slug?.trim() ?? '') },
+  ];
+  const warnings: string[] = [];
+  const titleLength = seo.seoTitle?.trim().length ?? 0;
+  const metaLength = seo.metaDescription?.trim().length ?? 0;
+  if (titleLength > 0 && (titleLength < 30 || titleLength > 65)) warnings.push('SEO Title nên nằm trong khoảng 30–65 ký tự.');
+  if (metaLength > 0 && (metaLength < 90 || metaLength > 170)) warnings.push('Meta Description nên nằm trong khoảng 90–170 ký tự.');
+  if (!hasHeadings) warnings.push('Article chưa có heading H2/H3.');
+  if (keyword && keywordCount > Math.max(4, Math.ceil(wordCount * 0.03))) warnings.push('Focus Keyword có dấu hiệu lặp quá mức.');
+  if (wordCount > 0 && wordCount < 450) warnings.push('Article có thể quá mỏng; hãy kiểm tra search intent trước khi duyệt.');
+  if (!input.selectedImageAltText?.trim()) warnings.push('Ảnh chính chưa có Alt Text.');
+  return { checks, warnings };
 }
 
 export const DEFAULT_CONNECTORS: ConnectorRecord[] = PLATFORMS.map((platform) => ({

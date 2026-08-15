@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { aggregatePublishingStatus, type CompanyProfile, type PlatformPublication } from '@ancv/shared';
+import { aggregatePublishingStatus, evaluateArticleSeo, type CompanyProfile, type ContentRecord, type MediaAssetRecord, type PlatformPublication } from '@ancv/shared';
 import { allocateContentId, createContentWithId } from '../services/content-id.js';
 import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
@@ -119,7 +119,19 @@ contentRouter.post('/:contentId/scenes/reorder', async (request, response, next)
 });
 
 contentRouter.post('/:contentId/approve', async (request, response, next) => {
-  try { const uid = response.locals.identity.uid; const now = new Date().toISOString(); await db().collection('contents').doc(request.params.contentId).update({ status: 'approved', approvedAt: now, approvedBy: uid, updatedAt: now }); await audit(uid, 'content.approve', request.params.contentId); response.json({ status: 'approved', approvedAt: now }); }
+  try {
+    const uid = response.locals.identity.uid; const now = new Date().toISOString(); const contentRef = db().collection('contents').doc(request.params.contentId); const snapshot = await contentRef.get();
+    if (!snapshot.exists) { response.status(404).json({ error: 'CONTENT_NOT_FOUND' }); return; }
+    const content = { id: snapshot.id, ...snapshot.data() } as ContentRecord;
+    if (content.type === 'article') {
+      const selectedImage = content.selectedImageId ? await db().collection('mediaAssets').doc(content.selectedImageId).get() : null;
+      const image = selectedImage?.exists ? selectedImage.data() as MediaAssetRecord : undefined;
+      const quality = evaluateArticleSeo({ seo: content.articleSeo, body: content.body, selectedImageAltText: image?.altText });
+      const failed = quality.checks.filter((item) => !item.passed).map((item) => item.key);
+      if (failed.length > 0) { response.status(409).json({ error: 'ARTICLE_SEO_GATE_FAILED', failed }); return; }
+    }
+    await contentRef.update({ status: 'approved', approvedAt: now, approvedBy: uid, updatedAt: now }); await audit(uid, 'content.approve', request.params.contentId); response.json({ status: 'approved', approvedAt: now });
+  }
   catch (error) { next(error); }
 });
 

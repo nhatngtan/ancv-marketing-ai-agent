@@ -1,6 +1,6 @@
 # API Feasibility Test
 
-Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành công. Việc bật API, đọc tài liệu hoặc phát hiện endpoint công khai không đồng nghĩa nghiệp vụ production đã PASS.
+Cập nhật: 2026-08-15. Chỉ đánh dấu PASS khi request thật đã thành công. Việc bật API, đọc tài liệu hoặc phát hiện endpoint công khai không đồng nghĩa nghiệp vụ production đã PASS.
 
 | Platform | Auth | Publish | Analytics | Review/Audit | Mode | Ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -30,6 +30,7 @@ Cập nhật: 2026-08-11. Chỉ đánh dấu PASS khi request thật đã thành
 - Website: `GET https://anninhcanhve.com/wp-json/` trả HTTP 200, namespace `wp/v2` và Application Password discovery PASS. Authenticated `GET /wp-json/wp/v2/users/me?context=edit` từ Cloud Run revision `ancv-marketing-backend-00021-zkt` trả HTTP 200 cho `editor01`.
 - Hai secret đều có version enabled và được mount vào Cloud Run bằng `ancv-cloud-run@ancv-marketing-ai-agent.iam.gserviceaccount.com`; không ghi credential vào source/log/Firestore.
 - WordPress API trả role thực tế `administrator` cho `editor01`, khác với role `Editor` được cung cấp ban đầu. Không thay đổi role; phải rà lại trong WordPress Admin trước khi cho phép write trong tương lai.
+- Article SEO V1 preflight từ revision `ancv-marketing-backend-00048-bzm`: authenticated GET post collection PASS; REST discovery advertise create post/media routes; user capabilities trả `edit_posts=true`, `upload_files=true`; Yoast expose namespace `yoast/v1` và response fields `yoast_head`, `yoast_head_json`. Đây chỉ là evidence READ-ONLY/capability discovery, không phải write PASS.
 - Không gửi request POST/PUT/PATCH/DELETE tới WordPress. Write access, media upload và publishing đều NOT TESTED.
 - Kết quả được lưu trong Firestore `connectorTests`; snapshot mới nhất được merge vào `connectors/{platform}`.
 

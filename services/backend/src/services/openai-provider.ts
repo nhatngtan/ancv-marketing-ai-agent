@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
-import type { CompanyProfile, Platform, SceneRecord, VisualStyle, CharacterReference, AIUsageTokens } from '@ancv/shared';
+import type { CompanyProfile, Platform, SceneRecord, VisualStyle, CharacterReference, AIUsageTokens, ArticleSeoData } from '@ancv/shared';
 import { aiModelConfig, config } from '../config.js';
 
 export const sceneDraftSchema = z.object({
@@ -18,7 +18,17 @@ export const sceneDraftSchema = z.object({
 }).strict();
 export const scenesResponseSchema = z.object({ scenes: z.array(sceneDraftSchema).min(1).max(120) }).strict();
 const copyResponseSchema = z.object({ title: z.string().max(300), text: z.string().min(1).max(30_000) }).strict();
-const articleResponseSchema = z.object({ title: z.string().min(1).max(300), body: z.string().min(1).max(80_000) }).strict();
+export const articleResponseSchema = z.object({
+  seoTitle: z.string().min(20).max(90),
+  h1: z.string().min(10).max(180),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120),
+  metaDescription: z.string().min(70).max(220),
+  focusKeyword: z.string().min(2).max(120),
+  body: z.string().min(800).max(80_000),
+  suggestedInternalLinks: z.array(z.string().max(500)).max(10),
+  faq: z.array(z.object({ question: z.string().min(5).max(300), answer: z.string().min(10).max(2_000) }).strict()).max(10),
+  imageAltTextSuggestions: z.array(z.string().min(5).max(300)).min(1).max(10),
+}).strict();
 const promptResponseSchema = z.object({ generationPrompt: z.string().min(1).max(8_000) }).strict();
 
 export function validatePlatformCopy(platform: Platform, value: { title: string; text: string }): { title: string; text: string } {
@@ -68,7 +78,16 @@ const sceneJsonSchema = {
   } } },
 } as const;
 const copyJsonSchema = { type: 'object', additionalProperties: false, required: ['title','text'], properties: { title: { type: 'string' }, text: { type: 'string' } } } as const;
-const articleJsonSchema = { type: 'object', additionalProperties: false, required: ['title','body'], properties: { title: { type: 'string' }, body: { type: 'string' } } } as const;
+const articleJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['seoTitle','h1','slug','metaDescription','focusKeyword','body','suggestedInternalLinks','faq','imageAltTextSuggestions'],
+  properties: {
+    seoTitle: { type: 'string' }, h1: { type: 'string' }, slug: { type: 'string' }, metaDescription: { type: 'string' }, focusKeyword: { type: 'string' },
+    body: { type: 'string' }, suggestedInternalLinks: { type: 'array', items: { type: 'string' } },
+    faq: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['question','answer'], properties: { question: { type: 'string' }, answer: { type: 'string' } } } },
+    imageAltTextSuggestions: { type: 'array', items: { type: 'string' } },
+  },
+} as const;
 const promptJsonSchema = { type: 'object', additionalProperties: false, required: ['generationPrompt'], properties: { generationPrompt: { type: 'string' } } } as const;
 
 export class OpenAIProvider {
@@ -125,13 +144,13 @@ export class OpenAIProvider {
     return { data: parsed, model: response.model, requestId: response._request_id ?? null, usage: usageOf(response) };
   }
 
-  async writeArticle(input: { topic: string; objective?: string; emphasis?: string; sourceMaterial?: string; notes?: string; desiredLength?: string; profile: CompanyProfile }): Promise<AIResult<{ title: string; body: string }>> {
+  async writeArticle(input: { topic: string; objective?: string; emphasis?: string; sourceMaterial?: string; notes?: string; desiredLength?: string; focusKeyword?: string; profile: CompanyProfile }): Promise<AIResult<ArticleSeoData & { body: string }>> {
     const response = await this.requireClient().responses.create({
       model: aiModelConfig.article_generation,
-      instructions: `Viết Article Draft tiếng Việt cho ANCV để người dùng biên tập và duyệt. Không tự publish. ${factualSafety()}`,
-      input: `CHỦ ĐỀ: ${input.topic}\nMỤC TIÊU: ${input.objective ?? ''}\nNHẤN MẠNH: ${input.emphasis ?? ''}\nTÀI LIỆU NGUỒN: ${input.sourceMaterial ?? ''}\nGHI CHÚ: ${input.notes ?? ''}\nĐỘ DÀI: ${input.desiredLength ?? ''}\n${companyContext(input.profile)}`,
-      max_output_tokens: 8_000, store: false,
-      text: { format: { type: 'json_schema', name: 'ancv_article', strict: true, schema: articleJsonSchema } },
+      instructions: `Bạn là biên tập viên SEO tiếng Việt của ANCV. Viết Website Article canonical hữu ích, đúng search intent và dễ đọc; dùng Markdown cho body, bắt đầu phần nội dung bằng mở bài và dùng ##/### cho H2/H3 (H1 trả ở field riêng). Focus keyword phải tự nhiên, không stuffing. SEO Title đúng nội dung, không clickbait. Slug lowercase không dấu, chỉ chữ số/chữ Latin và gạch ngang. CTA chỉ dựa trên CTA hoặc thông tin liên hệ đã xác minh. Suggested internal links chỉ nêu URL/đích có trong Company Profile hoặc tài liệu nguồn; nếu không có thì trả mảng rỗng. FAQ chỉ thêm khi phù hợp. Alt text mô tả hình ảnh, không nhồi keyword. Không tự publish. ${factualSafety()}`,
+      input: `CHỦ ĐỀ: ${input.topic}\nMỤC TIÊU/YÊU CẦU: ${input.objective ?? ''}\nTỪ KHÓA CHÍNH DO USER NHẬP (trống thì tự chọn đúng 01 focus keyword): ${input.focusKeyword ?? ''}\nNHẤN MẠNH: ${input.emphasis ?? ''}\nTÀI LIỆU NGUỒN: ${input.sourceMaterial ?? ''}\nGHI CHÚ: ${input.notes ?? ''}\nĐỘ DÀI: ${input.desiredLength ?? ''}\n${companyContext(input.profile)}`,
+      max_output_tokens: 12_000, store: false,
+      text: { format: { type: 'json_schema', name: 'ancv_seo_article', strict: true, schema: articleJsonSchema } },
     });
     const parsed = articleResponseSchema.parse(JSON.parse(response.output_text));
     return { data: parsed, model: response.model, requestId: response._request_id ?? null, usage: usageOf(response) };

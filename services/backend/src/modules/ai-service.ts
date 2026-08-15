@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import type { ContentRecord, Platform, PlatformCopy, SceneRecord } from '@ancv/shared';
+import type { ArticleSeoData, ContentRecord, Platform, PlatformCopy, SceneRecord } from '@ancv/shared';
 import { db, storageBucket } from '../firebase.js';
 import { requireAIRateLimit, requireAutomationIdentity, requireFirebaseEditor } from '../middleware/auth.js';
 import { openAIProvider } from '../services/openai-provider.js';
@@ -101,11 +101,11 @@ aiRouter.post('/content/:contentId/scenes/:sceneId/prompt', async (request, resp
 aiRouter.post('/content/:contentId/platform-copy/:platform', async (request, response, next) => {
   try {
     const input = jobInput.parse(request.body); const platform = platformSchema.parse(request.params.platform) as Platform; const uid = response.locals.identity.uid; const content = await contentOrThrow(request.params.contentId);
-    const allowed: Platform[] = content.type === 'video' ? ['youtube','tiktok','facebook','zalo','linkedin'] : ['website','facebook','zalo','linkedin'];
+    const allowed: Platform[] = content.type === 'video' ? ['youtube','tiktok','facebook','zalo','linkedin'] : ['facebook','zalo','linkedin'];
     if (!allowed.includes(platform)) { response.status(400).json({ error: 'PLATFORM_NOT_ALLOWED' }); return; }
     const operation = content.type === 'video' ? 'video_social_copy' as const : 'article_platform_copy' as const; const completed = await getCompletedAIJob<PlatformCopy>(uid, operation, input.idempotencyKey); if (completed) { response.json({ jobId: completed.jobId, duplicate: true, copy: completed.result }); return; }
     const current = content.platformCopies?.[platform]; if (current && !input.replaceExisting) { response.status(409).json({ error: 'COPY_EXISTS_CONFIRM_REGENERATE' }); return; }
-    const source = content.type === 'video' ? `${content.masterScript ?? ''}\n${content.body ?? ''}` : content.body;
+    const source = content.type === 'video' ? `${content.masterScript ?? ''}\n${content.body ?? ''}` : `H1: ${content.articleSeo?.h1 ?? content.title}\nMETA: ${content.articleSeo?.metaDescription ?? ''}\nARTICLE CANONICAL:\n${content.body}`;
     if (!source?.trim()) { response.status(400).json({ error: 'SOURCE_CONTENT_REQUIRED' }); return; }
     const profile = await loadCompanyProfile();
     const job = await runAIJob({ uid, operation, contentDocId: content.id, idempotencyKey: input.idempotencyKey, execute: async () => { const result = await openAIProvider.generatePlatformCopy({ source, topic: content.topic, platform, contentType: content.type, profile }); const copy: PlatformCopy = { platform, title: result.data.title || undefined, text: result.data.text, status: 'draft', generatedAt: new Date().toISOString(), generatedBy: uid, version: (current?.version ?? 0) + 1 }; return { data: copy, model: result.model, requestId: result.requestId, usage: result.usage }; } });
@@ -116,11 +116,15 @@ aiRouter.post('/content/:contentId/platform-copy/:platform', async (request, res
 aiRouter.post('/content/:contentId/article', async (request, response, next) => {
   try {
     const input = jobInput.parse(request.body); const uid = response.locals.identity.uid; const content = await contentOrThrow(request.params.contentId); if (content.type !== 'article') { response.status(400).json({ error: 'ARTICLE_REQUIRED' }); return; }
-    const completed = await getCompletedAIJob<{title:string;body:string}>(uid, 'article_generation', input.idempotencyKey); if (completed) { response.json({ jobId: completed.jobId, duplicate: true, article: completed.result }); return; }
+    const completed = await getCompletedAIJob<ArticleSeoData & {body:string}>(uid, 'article_generation', input.idempotencyKey); if (completed) { response.json({ jobId: completed.jobId, duplicate: true, article: completed.result }); return; }
     if (content.body?.trim() && !input.replaceExisting) { response.status(409).json({ error: 'ARTICLE_EXISTS_CONFIRM_REGENERATE' }); return; }
     const profile = await loadCompanyProfile();
-    const job = await runAIJob({ uid, operation: 'article_generation', contentDocId: content.id, idempotencyKey: input.idempotencyKey, execute: async () => { const result = await openAIProvider.writeArticle({ topic: content.topic, objective: content.objective, emphasis: content.shortDescription, sourceMaterial: content.sourceMaterial, notes: content.notes, desiredLength: content.desiredLength, profile }); return { data: result.data, model: result.model, requestId: result.requestId, usage: result.usage }; } });
-    if (!job.duplicate) await db().collection('contents').doc(content.id).update({ body: job.result.body, articleGeneratedTitle: job.result.title, status: 'review', updatedAt: new Date().toISOString() }); response.json({ jobId: job.jobId, duplicate: job.duplicate, article: job.result });
+    const job = await runAIJob({ uid, operation: 'article_generation', contentDocId: content.id, idempotencyKey: input.idempotencyKey, execute: async () => { const result = await openAIProvider.writeArticle({ topic: content.topic, objective: content.objective, emphasis: content.shortDescription, sourceMaterial: content.sourceMaterial, notes: content.notes, desiredLength: content.desiredLength, focusKeyword: content.articleSeo?.focusKeyword, profile }); return { data: result.data, model: result.model, requestId: result.requestId, usage: result.usage }; } });
+    if (!job.duplicate) {
+      const { body, ...articleSeo } = job.result;
+      await db().collection('contents').doc(content.id).update({ body, articleSeo, articleGeneratedTitle: articleSeo.h1, status: 'review', updatedAt: new Date().toISOString() });
+    }
+    response.json({ jobId: job.jobId, duplicate: job.duplicate, article: job.result });
   } catch (error) { next(error); }
 });
 
@@ -132,7 +136,7 @@ aiRouter.post('/content/:contentId/images', async (request, response, next) => {
       const result = await openAIProvider.generateImage({ prompt: input.prompt, size: input.size, quality: input.quality }); const buffer = Buffer.from(result.data.base64, 'base64'); const fileName = `${randomUUID()}.png`; const storagePath = `content/${content.id}/ai-images/${fileName}`; const token = randomUUID(); const file = storageBucket().file(storagePath);
       await file.save(buffer, { resumable: false, contentType: 'image/png', metadata: { metadata: { firebaseStorageDownloadTokens: token, contentDocId: content.id } } });
       const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(storageBucket().name)}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`; const now = new Date().toISOString(); const assetRef = db().collection('mediaAssets').doc();
-      const asset = { id: assetRef.id, contentDocId: content.id, contentId: content.contentId, kind: 'article_image', storagePath, downloadUrl, fileName, contentType: 'image/png', sizeBytes: buffer.byteLength, prompt: input.prompt, model: result.model, quality: input.quality, usage: result.usage, selected: false, status: 'ready', createdAt: now, updatedAt: now, createdBy: uid };
+      const asset = { id: assetRef.id, contentDocId: content.id, contentId: content.contentId, kind: 'article_image', storagePath, downloadUrl, fileName, contentType: 'image/png', sizeBytes: buffer.byteLength, prompt: input.prompt, model: result.model, quality: input.quality, usage: result.usage, altText: content.articleSeo?.imageAltTextSuggestions?.[0] ?? '', caption: '', mediaTitle: '', selected: false, status: 'ready', createdAt: now, updatedAt: now, createdBy: uid };
       await assetRef.set(asset); return { data: asset, model: result.model, requestId: result.requestId, usage: result.usage, imageCount: 1 };
     }}); response.status(201).json({ jobId: job.jobId, duplicate: job.duplicate, asset: job.result });
   } catch (error) { next(error); }

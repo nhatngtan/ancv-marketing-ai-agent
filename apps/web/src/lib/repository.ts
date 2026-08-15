@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
@@ -142,7 +142,7 @@ export async function registerVideoFinal(contentDocId: string, relativePath: str
   const completed = await waitLocalCommand(command.id);
   return completed.result?.asset as MediaAssetRecord;
 }
-export async function generateArticle(contentId: string, replaceExisting = false) { return api<{article:{title:string;body:string}}>(`/v1/ai/content/${contentId}/article`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
+export async function generateArticle(contentId: string, replaceExisting = false) { return api<{article:ArticleSeoData & {body:string}}>(`/v1/ai/content/${contentId}/article`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function generatePlatformCopy(contentId: string, platform: Platform, replaceExisting = false) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function generateVideoPlatformCopies(
   content: ContentRecord,
@@ -158,8 +158,23 @@ export async function generateVideoPlatformCopies(
   }
   return { succeeded, failed };
 }
+export async function generateArticleSocialCopies(
+  content: ContentRecord,
+  generate: (contentId: string, platform: Platform, replaceExisting: boolean) => Promise<unknown> = generatePlatformCopy,
+): Promise<{ succeeded: Platform[]; failed: Array<{platform:Platform;message:string}> }> {
+  const platforms: Platform[] = ['facebook', 'zalo', 'linkedin'];
+  const succeeded: Platform[] = [];
+  const failed: Array<{platform:Platform;message:string}> = [];
+  for (const platform of platforms) {
+    if (content.platformCopies?.[platform]) { succeeded.push(platform); continue; }
+    try { await generate(content.id, platform, false); succeeded.push(platform); }
+    catch (error) { failed.push({ platform, message: error instanceof Error ? error.message : 'Không thể tạo nội dung.' }); }
+  }
+  return { succeeded, failed };
+}
 export async function approvePlatformCopy(contentId: string, platform: Platform) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}/approve`, { method: 'POST', body: '{}' }); }
 export async function generateArticleImage(contentId: string, prompt: string, size = '1024x1024', quality = 'low') { return api<{asset:MediaAssetRecord}>(`/v1/ai/content/${contentId}/images`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), prompt, size, quality }) }, 180_000); }
+export async function saveAssetMetadata(assetId: string, changes: Pick<MediaAssetRecord, 'altText' | 'caption' | 'mediaTitle'>) { if (!firestore) return; await updateDoc(doc(firestore, 'mediaAssets', assetId), { ...changes, updatedAt: serverTimestamp() }); }
 export async function approveContent(contentId: string) { return api(`/v1/content/${contentId}/approve`, { method: 'POST', body: '{}' }); }
 export async function markReady(contentId: string) { return api(`/v1/content/${contentId}/ready`, { method: 'POST', body: '{}' }); }
 export async function setContentStatus(contentId: string, status: string) { return api(`/v1/content/${contentId}/status`, { method: 'POST', body: JSON.stringify({ status }) }); }

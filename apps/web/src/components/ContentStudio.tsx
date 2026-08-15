@@ -20,6 +20,7 @@ import {
   Video,
   X,
 } from "lucide-react";
+import { evaluateArticleSeo, type ArticleSeoData } from "@ancv/shared";
 import type {
   CharacterReference,
   ContentRecord,
@@ -46,6 +47,7 @@ import {
   duplicateScene,
   generateArticle,
   generateArticleImage,
+  generateArticleSocialCopies,
   generatePlatformCopy,
   generateVideoPlatformCopies,
   markManualPublished,
@@ -54,6 +56,7 @@ import {
   regenerateScene,
   reorderScenes,
   savePlatformCopy,
+  saveAssetMetadata,
   saveScene,
   selectAsset,
   subscribeAssets,
@@ -70,6 +73,7 @@ import {
   uploadMedia,
 } from "../lib/repository";
 import { flowErrorMessage, flowProgressLabel } from "../lib/flow-status";
+import { articleSaveStateLabel, shouldConfirmArticleRegeneration } from "../lib/article-seo";
 
 function AdvancedSection({
   label,
@@ -357,7 +361,7 @@ function StudioDrawer({
         </div>
         <div className="drawer-body studio-body">
           {content.type === "video" && tab === "script" && <VideoEditor content={content} scenes={scenes} busy={busy} act={act} />}
-          {content.type === "article" && tab === "editor" && <ArticleEditor content={content} busy={busy} act={act} />}
+          {content.type === "article" && tab === "editor" && <ArticleEditor content={content} assets={assets} busy={busy} act={act} />}
           {content.type === "video" && tab === "generate" && (
             <SceneEditor
               content={content}
@@ -380,7 +384,7 @@ function StudioDrawer({
             />
           )}
           {content.type === "article" && tab === "copies" && (
-            <CopyEditor content={content} busy={busy} act={act} />
+            <><CopyEditor content={content} busy={busy} act={act} /><ArticleDistributionPanel content={content} assets={assets} busy={busy} act={act} /></>
           )}
           {content.type === "video" && tab === "complete" && <>
             <MediaPanel content={content} scenes={scenes} assets={assets} busy={busy} act={act} />
@@ -647,41 +651,57 @@ function VideoEditor({
 
 function ArticleEditor({
   content,
+  assets,
   busy,
   act,
 }: {
   content: ContentRecord;
+  assets: MediaAssetRecord[];
   busy: string;
   act: (k: string, a: () => Promise<unknown>, d: string) => void;
 }) {
   const [body, setBody] = useState(content.body ?? "");
+  const [objective, setObjective] = useState(content.objective ?? "");
+  const [seo, setSeo] = useState<ArticleSeoData>(content.articleSeo ?? {
+    seoTitle: "", h1: "", slug: "", metaDescription: "", focusKeyword: "", suggestedInternalLinks: [], faq: [], imageAltTextSuggestions: [],
+  });
   const [dirty, setDirty] = useState(false);
+  const [saveState, setSaveState] = useState<"saving" | "saved" | "error">("saved");
   const saveVersion = useRef(0);
   const touch = () => {
     saveVersion.current += 1;
     setDirty(true);
+    setSaveState("saving");
   };
   useEffect(() => {
     setBody(content.body ?? "");
+    setObjective(content.objective ?? "");
+    setSeo(content.articleSeo ?? { seoTitle: "", h1: "", slug: "", metaDescription: "", focusKeyword: "", suggestedInternalLinks: [], faq: [], imageAltTextSuggestions: [] });
     setDirty(false);
+    setSaveState("saved");
     saveVersion.current = 0;
-  }, [content.id, content.body]);
+  }, [content.id, content.body, content.objective, content.articleSeo]);
   useEffect(() => {
     if (!dirty) return;
     const version = saveVersion.current;
     const timer = setTimeout(
       () =>
-        updateContent(content.id, { body })
+        updateContent(content.id, { body, objective, articleSeo: seo })
           .then(() => {
-            if (saveVersion.current === version) setDirty(false);
+            if (saveVersion.current === version) {
+              setDirty(false);
+              setSaveState("saved");
+            }
           })
-          .catch(() => undefined),
+          .catch(() => {
+            if (saveVersion.current === version) setSaveState("error");
+          }),
       1200,
     );
     return () => clearTimeout(timer);
-  }, [dirty, body, content.id]);
+  }, [dirty, body, objective, seo, content.id]);
   const generate = () => {
-    const replace = body.trim().length > 0;
+    const replace = shouldConfirmArticleRegeneration(body);
     if (
       replace &&
       !window.confirm(
@@ -691,23 +711,42 @@ function ArticleEditor({
       return;
     act(
       "article",
-      () => generateArticle(content.id, replace),
-      "Article Draft đã được tạo.",
+      async () => {
+        await updateContent(content.id, { body, objective, articleSeo: seo });
+        return generateArticle(content.id, replace);
+      },
+      "Bài Website chuẩn SEO đã được tạo.",
     );
   };
+  const selectedImage = assets.find((asset) => asset.kind === "article_image" && asset.selected);
+  const quality = evaluateArticleSeo({ seo, body, selectedImageAltText: selectedImage?.altText });
+  const patchSeo = (changes: Partial<ArticleSeoData>) => { setSeo((current) => ({ ...current, ...changes })); touch(); };
   return (
     <>
       <section>
         <div className="section-title">
           <div>
-            <h3>Article Draft</h3>
-            <small>{dirty ? "Đang tự lưu…" : "Đã lưu"}</small>
+            <span className="step-label">Bài Website gốc</span>
+            <h3>Article chuẩn SEO</h3>
+            <small className={`save-state ${saveState}`}>{articleSaveStateLabel(saveState)}</small>
           </div>
           <button className="primary" disabled={!!busy} onClick={generate}>
             <Sparkles size={15} />
-            {busy === "article" ? "Đang viết…" : "Tạo bài bằng AI"}
+            {busy === "article" ? "Đang viết…" : "Tạo bài chuẩn SEO bằng AI"}
           </button>
         </div>
+        <label>Mục tiêu bài viết hoặc yêu cầu thêm<textarea rows={3} value={objective} onChange={(event) => { setObjective(event.target.value); touch(); }} /></label>
+      </section>
+      <section className="article-seo-fields">
+        <div className="section-title"><div><span className="step-label">SEO</span><h3>Thông tin tìm kiếm</h3></div></div>
+        <label>Từ khóa chính (không bắt buộc)<input value={seo.focusKeyword} onChange={(event) => patchSeo({ focusKeyword: event.target.value })} placeholder="Để trống để AI tự xác định 01 focus keyword" /></label>
+        <label>SEO Title<input value={seo.seoTitle} onChange={(event) => patchSeo({ seoTitle: event.target.value })} /></label>
+        <label>H1<input value={seo.h1} onChange={(event) => patchSeo({ h1: event.target.value })} /></label>
+        <label>Slug<input value={seo.slug} onChange={(event) => patchSeo({ slug: event.target.value.toLowerCase() })} placeholder="vi-du-slug-khong-dau" /></label>
+        <label>Meta Description<textarea rows={3} value={seo.metaDescription} onChange={(event) => patchSeo({ metaDescription: event.target.value })} /></label>
+      </section>
+      <section>
+        <div className="section-title"><div><span className="step-label">Nội dung</span><h3>Article Body</h3></div></div>
         <textarea
           className="long-editor"
           rows={22}
@@ -716,9 +755,19 @@ function ArticleEditor({
             setBody(e.target.value);
             touch();
           }}
-          placeholder="Bản nháp bài viết sẽ xuất hiện tại đây. Bạn có thể tự nhập hoặc bấm Tạo bài bằng AI."
+          placeholder="Bài Website canonical sẽ xuất hiện tại đây. Dùng ## và ### cho H2/H3."
         />
       </section>
+      <section className="seo-quality-panel">
+        <div className="section-title"><div><span className="step-label">Quality gate</span><h3>Kiểm tra SEO nhẹ</h3><small>Checklist kỹ thuật, không phải cam kết thứ hạng Google.</small></div></div>
+        <div className="seo-check-grid">{quality.checks.map((item) => <div className={item.passed ? "passed" : "pending"} key={item.key}><Check size={14} /> {item.label}</div>)}</div>
+        {quality.warnings.length > 0 && <div className="seo-warnings">{quality.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div>}
+      </section>
+      {(seo.suggestedInternalLinks.length > 0 || seo.faq.length > 0 || seo.imageAltTextSuggestions.length > 0) && <AdvancedSection label="Gợi ý SEO bổ sung">
+        {seo.suggestedInternalLinks.length > 0 && <div><strong>Internal links</strong><ul>{seo.suggestedInternalLinks.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+        {seo.faq.length > 0 && <div><strong>FAQ</strong>{seo.faq.map((item) => <div key={item.question}><b>{item.question}</b><p>{item.answer}</p></div>)}</div>}
+        {seo.imageAltTextSuggestions.length > 0 && <div><strong>Alt text gợi ý</strong><ul>{seo.imageAltTextSuggestions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+      </AdvancedSection>}
       <section className="factual-note">
         <strong>Factual Safety</strong>
         <p>
@@ -1409,10 +1458,18 @@ function MediaPanel({
             <div className="image-grid">
               {articleImages.map((asset) => (
                 <article key={asset.id}>
-                  <img src={asset.downloadUrl} alt={asset.fileName} />
+                  <img src={asset.downloadUrl} alt={asset.altText || asset.fileName} />
                   <small>
                     {asset.quality} · {Math.round(asset.sizeBytes / 1024)} KB
                   </small>
+                  <label>Alt Text<input id={`alt-${asset.id}`} defaultValue={asset.altText ?? ""} placeholder="Mô tả đúng nội dung ảnh" /></label>
+                  <label>Caption (không bắt buộc)<input id={`caption-${asset.id}`} defaultValue={asset.caption ?? ""} /></label>
+                  <label>Tiêu đề ảnh (không bắt buộc)<input id={`media-title-${asset.id}`} defaultValue={asset.mediaTitle ?? ""} /></label>
+                  <button className="small-action" disabled={!!busy} onClick={() => act(`save-image-meta-${asset.id}`, () => saveAssetMetadata(asset.id, {
+                    altText: (document.getElementById(`alt-${asset.id}`) as HTMLInputElement).value.trim(),
+                    caption: (document.getElementById(`caption-${asset.id}`) as HTMLInputElement).value.trim(),
+                    mediaTitle: (document.getElementById(`media-title-${asset.id}`) as HTMLInputElement).value.trim(),
+                  }), "Đã lưu Alt Text và metadata ảnh.")}><Save size={12} /> Lưu metadata</button>
                   <button
                     className="small-action"
                     onClick={() =>
@@ -1475,7 +1532,7 @@ function CopyEditor({
   const platforms: Platform[] =
     content.type === "video"
       ? ["tiktok", "youtube", "facebook", "zalo", "linkedin"]
-      : ["website", "facebook", "zalo", "linkedin"];
+      : ["facebook", "zalo", "linkedin"];
   const [drafts, setDrafts] = useState<Partial<Record<Platform, PlatformCopy>>>(
     content.platformCopies ?? {},
   );
@@ -1517,6 +1574,17 @@ function CopyEditor({
           {batchFailures.length > 0 && <div className="copy-batch-errors">{batchFailures.map((failure) => <small key={failure.platform}><strong>{platformLabels[failure.platform]}:</strong> {failure.message}</small>)}</div>}
         </section>
       )}
+      {content.type === "article" && (
+        <section className="copy-batch-cta">
+          <div><h3>Tạo nội dung mạng xã hội</h3><p>Tạo tuần tự Facebook, Zalo và LinkedIn từ Article Website đã lưu. Bản đã có không bị ghi đè.</p></div>
+          <button className="primary" disabled={!!busy || !content.body.trim()} onClick={() => act("article-copies-all", async () => {
+            const result = await generateArticleSocialCopies(content);
+            setBatchFailures(result.failed);
+            if (result.failed.length) throw new Error(`Đã giữ ${result.succeeded.length}/3 bản; ${result.failed.length} nền tảng cần thử riêng.`);
+          }, "Đã tạo nội dung mạng xã hội.")}><Sparkles size={15} /> {busy === "article-copies-all" ? "Đang tạo lần lượt…" : "Tạo nội dung mạng xã hội"}</button>
+          {batchFailures.length > 0 && <div className="copy-batch-errors">{batchFailures.map((failure) => <small key={failure.platform}><strong>{platformLabels[failure.platform]}:</strong> {failure.message}</small>)}</div>}
+        </section>
+      )}
       {platforms.map((platform) => {
         const copy = drafts[platform];
         return (
@@ -1536,13 +1604,6 @@ function CopyEditor({
                 {copy?.status === "approved" ? "Đã duyệt" : "Bản nháp"}
               </Badge>
             </div>
-            {platform === "website" && (
-              <p className="factual-note">
-                <strong>Website đang xây dựng – chưa bật đăng tự động.</strong>{" "}
-                Hãy dùng Copy, đăng thủ công khi Website sẵn sàng, sau đó nhập
-                URL bằng nút Đã đăng thủ công.
-              </p>
-            )}
             {platform === "youtube" && (
               <input
                 placeholder="Tiêu đề YouTube"
@@ -1675,6 +1736,33 @@ const manualPlatformUrls: Partial<Record<Platform, string>> = {
   zalo: "https://oa.zalo.me/manage/oa",
   linkedin: "https://www.linkedin.com/feed/",
 };
+
+function ArticleDistributionPanel({ content, assets, busy, act }: { content: ContentRecord; assets: MediaAssetRecord[]; busy: string; act: (k: string, a: () => Promise<unknown>, d: string) => void }) {
+  const selectedImage = assets.find((asset) => asset.kind === "article_image" && asset.selected);
+  const quality = evaluateArticleSeo({ seo: content.articleSeo, body: content.body, selectedImageAltText: selectedImage?.altText });
+  const socialPlatforms: Platform[] = ["facebook", "zalo", "linkedin"];
+  const articleApproved = Boolean(content.approvedAt);
+  const socialApproved = socialPlatforms.every((platform) => content.platformCopies?.[platform]?.status === "approved");
+  return <section className="publishing-panel article-distribution-panel">
+    <div className="section-title"><div><span className="step-label">Phân phối</span><h3>Website & mạng xã hội</h3><small>Website là Article canonical. WordPress write chưa bật trước xác nhận UAT.</small></div></div>
+    <div className="article-completion-summary">
+      <div><strong>Bài Website</strong><small>{articleApproved ? "✓ Nội dung đã duyệt" : "Chờ duyệt"}</small></div>
+      <div><strong>SEO</strong><small>{quality.checks.filter((item) => item.passed).length}/{quality.checks.length} mục đạt</small></div>
+      <div><strong>Hình ảnh</strong><small>{selectedImage?.altText ? "✓ Ảnh chính + Alt Text" : "Chưa đủ ảnh chính/Alt Text"}</small></div>
+      <div><strong>Social</strong><small>{socialApproved ? "✓ 3/3 đã duyệt" : "Chờ duyệt đủ 3 bản"}</small></div>
+    </div>
+    <div className="publishing-row"><div><strong>Website</strong><small>Chỉ READ-ONLY preflight</small></div><button className="primary" disabled title="Chờ xác nhận WordPress Draft UAT"><Upload size={14} /> Tạo bản nháp WordPress</button></div>
+    {socialPlatforms.map((platform) => {
+      const copy = content.platformCopies?.[platform];
+      const publication = content.platforms.find((item) => item.platform === platform);
+      return <div className="publishing-row" key={platform}><div><strong>{platformLabels[platform]}</strong><small>{publication?.status === "published" ? "Đã đăng" : "Đăng thủ công"}</small></div>
+        <button className="secondary" disabled={!copy} onClick={() => navigator.clipboard.writeText(copy?.text ?? "")}><Clipboard size={14} /> Copy</button>
+        <button className="secondary" onClick={() => window.open(manualPlatformUrls[platform], "_blank", "noopener,noreferrer")}><ExternalLink size={14} /> Mở</button>
+        <button className="secondary" disabled={!!busy || publication?.status === "published"} onClick={() => { const url = window.prompt(`Post URL ${platformLabels[platform]} (không bắt buộc):`, ""); if (url === null) return; act(`article-manual-${platform}`, () => markManualPublished(content.id, platform, url.trim() || undefined), `Đã đánh dấu ${platformLabels[platform]} là đã đăng.`); }}><Check size={14} /> Đánh dấu đã đăng</button>
+      </div>;
+    })}
+  </section>;
+}
 
 function PublishingPanel({
   content,

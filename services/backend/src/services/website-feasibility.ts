@@ -61,18 +61,29 @@ export async function testWebsite(
     let applicationPasswordsAdvertised = false;
     let postsCreateAdvertised = false;
     let mediaCreateAdvertised = false;
+    let siteName: string | null = null;
+    let siteUrl: string | null = null;
+    let seoPluginNamespaces: string[] = [];
     let authenticatedReadPassed = false;
+    let postsReadPassed = false;
     let authenticatedReadStatus: number | 'not_tested' = 'not_tested';
     let authenticatedUser: { id?: number; slug?: string; roles?: string[] } | null = null;
+    let createPostsCapability = false;
+    let mediaUploadCapability = false;
+    let draftCapability = false;
+    let seoMetadataRestFields: string[] = [];
     if (wordpressHint) {
       const endpoint = new URL('/wp-json/', homepage.finalUrl).toString();
       const api = await safeFetch(endpoint, dependencies);
       apiRootPassed = api.response.ok && (api.response.headers.get('content-type') ?? '').includes('json');
       if (apiRootPassed) {
         const discovery = JSON.parse(await api.response.text()) as {
-          authentication?: Record<string, unknown>;
+          name?: string; url?: string; namespaces?: string[]; authentication?: Record<string, unknown>;
           routes?: Record<string, { endpoints?: Array<{ methods?: string[] }> }>;
         };
+        siteName = typeof discovery.name === 'string' ? discovery.name : null;
+        siteUrl = typeof discovery.url === 'string' ? discovery.url : homepage.finalUrl.origin;
+        seoPluginNamespaces = (discovery.namespaces ?? []).filter((item) => /yoast|rank.?math|seo/i.test(item));
         const supportsPost = (path: string) => discovery.routes?.[path]?.endpoints?.some((item) => item.methods?.includes('POST')) ?? false;
         applicationPasswordsAdvertised = Boolean(discovery.authentication?.['application-passwords']);
         postsCreateAdvertised = supportsPost('/wp/v2/posts');
@@ -85,8 +96,19 @@ export async function testWebsite(
         authenticatedReadStatus = usersMe.response.status;
         authenticatedReadPassed = usersMe.response.ok;
         if (authenticatedReadPassed) {
-          const data = await usersMe.response.json() as { id?: number; slug?: string; roles?: string[] };
+          const data = await usersMe.response.json() as { id?: number; slug?: string; roles?: string[]; capabilities?: Record<string, boolean> };
           authenticatedUser = { id: data.id, slug: data.slug, roles: data.roles };
+          createPostsCapability = Boolean(data.capabilities?.edit_posts && postsCreateAdvertised);
+          draftCapability = createPostsCapability;
+          mediaUploadCapability = Boolean(data.capabilities?.upload_files && mediaCreateAdvertised);
+          const postsUrl = new URL('/wp-json/wp/v2/posts?context=edit&per_page=1', homepage.finalUrl).toString();
+          const posts = await safeFetch(postsUrl, dependencies, { origin: homepage.finalUrl.origin, value: authorization });
+          postsReadPassed = posts.response.ok;
+          if (postsReadPassed) {
+            const records = await posts.response.json() as Array<Record<string, unknown>>;
+            const fields = Object.keys(records[0] ?? {});
+            seoMetadataRestFields = fields.filter((field) => /yoast|rank.?math|seo|meta.?description/i.test(field));
+          }
         }
       }
     }
@@ -95,7 +117,7 @@ export async function testWebsite(
     const limitations = !apiRootPassed
       ? ['Không xác minh được WordPress REST API; tiếp tục Manual Fallback.']
       : authenticatedReadPassed
-        ? ['Authenticated read API PASS. Write API, media upload và publishing chủ ý chưa được kiểm tra vì Website đang xây dựng.']
+        ? ['Authenticated read API PASS. Capability chỉ được suy ra từ users/me + REST route discovery; không gửi POST/PUT/PATCH/DELETE. WordPress draft/media/publishing vẫn NOT TESTED.']
         : credentialConfigured
           ? [`WordPress REST API công khai PASS nhưng /users/me chưa xác thực thành công (HTTP ${authenticatedReadStatus}). Không chạy bất kỳ write request nào.`]
           : ['WordPress REST API công khai PASS; chưa có đủ secret version để test authenticated GET /users/me. Write API, media và publishing đều NOT TESTED.'];
@@ -114,6 +136,16 @@ export async function testWebsite(
         usersMeRequest: authenticatedReadPassed ? 'passed' : credentialConfigured ? 'failed' : 'not_tested',
         usersMeHttpStatus: authenticatedReadStatus,
         authenticatedUser,
+        siteName,
+        siteUrl,
+        createPostsCapability,
+        draftCapability,
+        mediaUploadCapability,
+        postsReadRequest: postsReadPassed ? 'passed' : authenticatedReadPassed ? 'failed' : 'not_tested',
+        seoPluginNamespaces,
+        seoMetadataRestFields,
+        seoMetadataRestSupport: seoMetadataRestFields.length > 0,
+        readyForDraftUat: authenticatedReadPassed && postsReadPassed && createPostsCapability && mediaUploadCapability && draftCapability,
         publicReadAccess: apiRootPassed ? 'passed' : 'failed',
         readAccess: authenticatedReadPassed ? 'passed' : 'not_tested',
         writeAccess: 'not_tested',
