@@ -6,10 +6,10 @@ Cập nhật: 2026-08-15. Chỉ đánh dấu PASS khi request thật đã thành
 | --- | --- | --- | --- | --- | --- | --- |
 | OpenAI | Secret Manager + Cloud Run production Service Account PASS | Responses API PASS; Image API PASS | Usage evidence PASS | N/A | Tự động | Request thật từ Cloud Run, không lưu ảnh test |
 | YouTube | OAuth + refresh token PASS; `channels.list(mine=true)` khớp đúng channel | `videos.insert` PRIVATE PASS đúng 01 video; public/unlisted/update/delete/scheduling NOT TESTED | `reports.query` PASS, HTTP 200, 7 dòng | Sensitive scopes chưa verified; compliance audit/public automation chưa xác minh | Bán tự động | Channel `UCy-H7__UvdWcTbUax3RGDcA`; test Video ID `OSbbjviru7A`, private, 1 attempt, không retry |
-| Facebook | Chưa có Meta App/Page token; portal yêu cầu đăng nhập | Page post/video NOT TESTED | Page Insights NOT TESTED | App Review/Business Verification chưa bắt đầu | Thủ công | Page ID/quyền quản trị chưa xác minh; URL ứng viên cũ hiện unavailable |
-| TikTok | Chưa có Developer App/token; portal yêu cầu đăng nhập | Direct Post/upload NOT TESTED | Display/metrics NOT TESTED | Audit chưa bắt đầu | Thủ công | Chưa xác minh creator account; unaudited Direct Post chỉ private/SELF_ONLY |
-| LinkedIn | Chưa có App/token; portal yêu cầu đăng nhập | Posts API NOT TESTED | Organization analytics NOT TESTED | Community Management review chưa bắt đầu | Thủ công | Chưa xác minh Organization URN/Page role |
-| Zalo | Chưa có Zalo App/OA token; portal yêu cầu đăng nhập | Article/video OA API NOT TESTED | OA analytics NOT TESTED | OA/App/plan chưa xác minh | Thủ công | `zalo.me/0932773999` chỉ là contact link công khai, không phải OA ID evidence |
+| Facebook | Chưa có Meta App/Page token | Page post/photo/video NOT TESTED | Page Insights NOT TESTED | App Review/Advanced Access/Business Verification chưa bắt đầu | Thủ công | `NEED_ACCOUNT_SETUP`; Page ID/quyền quản trị chưa xác minh |
+| TikTok | Chưa có Developer App/token | Direct Post/Upload-to-inbox NOT TESTED | Display/metrics NOT TESTED | Audit chưa bắt đầu; internal-only Direct Post use case không được guideline chấp nhận | Thủ công | `MANUAL_ONLY`; chưa xác minh creator account |
+| LinkedIn | Chưa có App/token | Posts API NOT TESTED | Organization analytics NOT TESTED | Community Management Development/Standard review chưa bắt đầu | Thủ công | `NEED_ACCOUNT_SETUP`; chưa xác minh Organization URN/Page role |
+| Zalo | Chưa có Zalo App/OA token | Article/video OA API NOT TESTED | OA analytics NOT TESTED | OA/App/plan chưa xác minh | Thủ công | `NEED_ACCOUNT_SETUP`; contact link không phải OA ID evidence |
 | Website | Application Password + authenticated `/users/me` PASS | Media upload + đúng 01 Draft PASS; publish/schedule NOT TESTED | Chưa test | N/A | Bán tự động | Post `801`, Media `800`; live UAT giữ draft, không publish |
 | GA4 | Runtime Service Account list PASS | N/A | Chưa PASS `runReport` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development cũng không thấy property ANCV |
 | Search Console | Runtime Service Account list PASS | N/A | Chưa PASS `searchAnalytics.query` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development không có `anninhcanhve.com` |
@@ -64,6 +64,16 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 - Search Console: `sites.list` bằng production Service Account PASS, `accessibleSiteCount = 0`; `searchAnalytics.query` chưa được phép chạy và connector giữ manual/no-data.
 - Website HTML công khai không được dùng làm bằng chứng cho quyền GA4 Data API hoặc Search Console API.
 
+## Evidence Social API Feasibility V1 — 2026-08-15
+
+- Báo cáo chi tiết và verdict từng nền tảng: [SOCIAL_API_FEASIBILITY_V1.md](SOCIAL_API_FEASIBILITY_V1.md).
+- Identity PASS: gcloud `nhat.ngtan@gmail.com`, project `ancv-marketing-ai-agent`. Secret Manager không có App/token Facebook/Meta/TikTok/LinkedIn/Zalo.
+- Firestore giữ bốn connector ở `not_tested / manual`; không ghi đè thành available vì không có authenticated request thật.
+- HTML website production chỉ công khai `https://zalo.me/0932773999`; không có link Facebook/TikTok/LinkedIn. Public search không phải evidence ownership hoặc API access.
+- Không khởi chạy OAuth, không gửi Social API write request và không dùng browser automation. Dashboard Kết nối hiện có đã hiển thị status/mode/limitations từ Firestore nên không thêm UI/nút publish.
+- TikTok Direct Post technical capability không đồng nghĩa phù hợp nghiệp vụ ANCV: guideline hiện loại use case app nội bộ chỉ upload cho account của đội ngũ; giữ `MANUAL_ONLY` cho direct publishing.
+- LinkedIn current docs không công bố quota số cố định; rate limit theo endpoint/app/member và chỉ hiện trong Developer Portal sau request. Bỏ con số Development tier cũ khỏi kết luận.
+
 ## Evidence Phase 2E — Social API — 2026-08-11
 
 - Identity pre-flight PASS: gcloud, Firebase và ADC đều là `nhat.ngtan@gmail.com`; project `ancv-marketing-ai-agent`; cả `nhat.ngtan@gmail.com` và `ancv.marketing@gmail.com` vẫn là Owner.
@@ -88,7 +98,7 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 ### Capability theo tài liệu — chưa phải PASS
 
 - YouTube: `videos.insert` hỗ trợ upload và metadata; project API chưa audit có upload bị giới hạn private. Analytics cần OAuth, gồm `yt-analytics.readonly` và hiện còn yêu cầu `youtube.readonly` cho query.
-- Facebook: Page post/text/link/photo/video được Pages API hỗ trợ; cần Page token và các quyền thực cấp như `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `publish_video`. Page Insights cần `read_insights`, `pages_read_engagement` và task `ANALYZE`; nhiều permission/Advanced Access cần App Review và Business Verification.
-- LinkedIn: Posts API hỗ trợ text, image, video và article; Organization publishing/reading cần `w_organization_social`/`r_organization_social` cùng Page role. Community Management là vetted product; Development tier mặc định 500 calls/app/24h và 100 calls/member/app/24h.
-- TikTok: Direct Post dùng `video.publish`; Upload-to-inbox dùng `video.upload`; init tối đa 6 requests/phút/user token. Unaudited client bị private/SELF_ONLY và active-user/posting caps. Display API có `user.info.*`/`video.list` và public-video metrics, không mặc định bằng marketing analytics đầy đủ.
+- Facebook: Page post/text/link/photo/video được Pages API hỗ trợ; cần Page token và quyền thực cấp như `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`. Video/Insights permission và Page task phải đối chiếu lại bằng đúng App/API version; nhiều permission/Advanced Access cần App Review và Business Verification.
+- LinkedIn: Posts API hỗ trợ text, image, video và article; Organization publishing/reading cần `w_organization_social`/`r_organization_social` cùng Page role. Community Management là vetted product; quota cụ thể theo endpoint/app/member chỉ xác minh được trong Developer Portal sau request.
+- TikTok: Direct Post dùng `video.publish`; Upload-to-inbox dùng `video.upload`; init tối đa 6 requests/phút/user token. Unaudited client bị private/SELF_ONLY và active-user/posting caps. Guideline không chấp nhận Direct Post app chỉ phục vụ internal team/account; Display API không mặc định bằng marketing analytics đầy đủ.
 - Zalo: OA OpenAPI yêu cầu Zalo OA + Zalo App được cấp quyền; tài liệu Nội dung hỗ trợ tạo/xuất bản/cập nhật/quản lý bài viết và video. Zalo có thể yêu cầu gói OA/tính năng trả phí; analytics và hạn mức thực tế chưa xác minh.
