@@ -14,8 +14,16 @@ import { getPublishingProvider } from '../connectors/registry.js';
 import { decideRetry } from '../services/retry-policy.js';
 import { requireAutomationIdentity, requireFirebaseEditor } from '../middleware/auth.js';
 import { config } from '../config.js';
+import { createWordPressDraftUat } from '../services/wordpress-draft.js';
 
 export const publishingRouter = Router();
+
+publishingRouter.post('/wordpress/:contentId/draft', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const result = await createWordPressDraftUat(String(request.params.contentId), response.locals.identity.uid);
+    response.status(result.idempotentReplay ? 200 : 201).json(result);
+  } catch (error) { next(error); }
+});
 
 const manualSchema = z.object({
   postUrl: z.string().url().optional(),

@@ -103,6 +103,38 @@ export interface ContentRecord extends AuditFields {
   approvedBy?: string;
   flowProjectUrl?: string;
   articleSeo?: ArticleSeoData;
+  wordpressDraft?: WordPressDraftState;
+}
+
+export interface WordPressDraftState {
+  siteUrl: string;
+  postId: number;
+  featuredMediaId: number;
+  status: 'draft';
+  slug: string;
+  postUrl?: string;
+  yoastMetadata: 'synced' | 'not_synced';
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface WordPressDraftJobRecord extends AuditFields {
+  platform: 'website';
+  operation: 'create_draft';
+  contentDocId: string;
+  contentId: string;
+  assetId: string;
+  idempotencyKey: string;
+  status: 'processing' | 'succeeded' | 'needs_manual';
+  siteUrl: string;
+  slug: string;
+  mediaIntentAt?: string;
+  postIntentAt?: string;
+  wordpressMediaId?: number;
+  wordpressPostId?: number;
+  yoastMetadata?: 'synced' | 'not_synced';
+  completedAt?: string;
+  error?: string | null;
 }
 
 export interface ArticleSeoFaq {

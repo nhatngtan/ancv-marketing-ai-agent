@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord, type WordPressDraftJobRecord, type WordPressDraftState } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
@@ -179,6 +179,7 @@ export async function approveContent(contentId: string) { return api(`/v1/conten
 export async function markReady(contentId: string) { return api(`/v1/content/${contentId}/ready`, { method: 'POST', body: '{}' }); }
 export async function setContentStatus(contentId: string, status: string) { return api(`/v1/content/${contentId}/status`, { method: 'POST', body: JSON.stringify({ status }) }); }
 export async function markManualPublished(contentId: string, platform: Platform, postUrl?: string, note?: string) { return api(`/v1/content/${contentId}/manual-publish`, { method: 'POST', body: JSON.stringify({ platform, ...(postUrl ? { postUrl } : {}), note }) }); }
+export async function createWordPressDraft(contentId: string) { return api<{job:WordPressDraftJobRecord;draft:WordPressDraftState;duplicateCount:number;idempotentReplay:boolean}>(`/v1/publishing/wordpress/${contentId}/draft`, { method: 'POST', body: '{}' }, 180_000); }
 export async function getYouTubePublishingJob(jobId: string) { return api<{job:PublishingJobRecord}>(`/v1/publishing/youtube/jobs/${jobId}`); }
 export async function publishYouTubePrivate(contentId: string): Promise<PublishingJobRecord> {
   const started = await api<{job:PublishingJobRecord}> (`/v1/publishing/youtube/${contentId}/private`, { method: 'POST', body: JSON.stringify({ confirmPrivate: true, idempotencyKey: crypto.randomUUID() }) });

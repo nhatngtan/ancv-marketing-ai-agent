@@ -41,6 +41,7 @@ import {
   approvePlatformCopy,
   breakdownScenes,
   createFlowJob,
+  createWordPressDraft,
   createScene,
   deleteScene,
   downloadSceneList,
@@ -1743,15 +1744,20 @@ function ArticleDistributionPanel({ content, assets, busy, act }: { content: Con
   const socialPlatforms: Platform[] = ["facebook", "zalo", "linkedin"];
   const articleApproved = Boolean(content.approvedAt);
   const socialApproved = socialPlatforms.every((platform) => content.platformCopies?.[platform]?.status === "approved");
+  const wordpressCreated = content.wordpressDraft?.status === "draft";
+  const wordpressReady = articleApproved && quality.checks.every((item) => item.passed) && Boolean(selectedImage?.altText) && content.contentId === "ANCV-ART-2026-002" && content.testContent;
   return <section className="publishing-panel article-distribution-panel">
-    <div className="section-title"><div><span className="step-label">Phân phối</span><h3>Website & mạng xã hội</h3><small>Website là Article canonical. WordPress write chưa bật trước xác nhận UAT.</small></div></div>
+    <div className="section-title"><div><span className="step-label">Phân phối</span><h3>Website & mạng xã hội</h3><small>Website là Article canonical. WordPress luôn tạo bản nháp trước khi người dùng kiểm tra.</small></div></div>
     <div className="article-completion-summary">
       <div><strong>Bài Website</strong><small>{articleApproved ? "✓ Nội dung đã duyệt" : "Chờ duyệt"}</small></div>
       <div><strong>SEO</strong><small>{quality.checks.filter((item) => item.passed).length}/{quality.checks.length} mục đạt</small></div>
       <div><strong>Hình ảnh</strong><small>{selectedImage?.altText ? "✓ Ảnh chính + Alt Text" : "Chưa đủ ảnh chính/Alt Text"}</small></div>
       <div><strong>Social</strong><small>{socialApproved ? "✓ 3/3 đã duyệt" : "Chờ duyệt đủ 3 bản"}</small></div>
     </div>
-    <div className="publishing-row"><div><strong>Website</strong><small>Chỉ READ-ONLY preflight</small></div><button className="primary" disabled title="Chờ xác nhận WordPress Draft UAT"><Upload size={14} /> Tạo bản nháp WordPress</button></div>
+    <div className="publishing-row"><div><strong>Website</strong><small>{wordpressCreated ? `Bản nháp WordPress đã tạo · Post #${content.wordpressDraft?.postId}` : "Chưa tạo bản nháp"}</small></div><button className="primary" disabled={!!busy || wordpressCreated || !wordpressReady} title={wordpressCreated ? "Bản nháp đã tồn tại; hệ thống khóa tạo trùng." : !wordpressReady ? "Cần Article TEST đã duyệt, SEO đạt và ảnh chính có Alt Text." : "Tạo đúng 01 bản nháp WordPress"} onClick={() => {
+      if (!window.confirm("Tạo 01 bài TEST ở trạng thái Draft trên Website ANCV? Hệ thống sẽ không Publish.")) return;
+      act("wordpress-draft", () => createWordPressDraft(content.id), "Bản nháp WordPress đã tạo.");
+    }}><Upload size={14} /> {wordpressCreated ? "Bản nháp WordPress đã tạo" : busy === "wordpress-draft" ? "Đang tạo bản nháp…" : "Tạo bản nháp WordPress"}</button></div>
     {socialPlatforms.map((platform) => {
       const copy = content.platformCopies?.[platform];
       const publication = content.platforms.find((item) => item.platform === platform);

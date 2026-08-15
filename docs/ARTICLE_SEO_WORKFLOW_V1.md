@@ -2,7 +2,7 @@
 
 Luồng production:
 
-`Chủ đề → Article Website canonical → ảnh AI → duyệt Article → Facebook/Zalo/LinkedIn → WordPress Draft (chờ UAT write)`.
+`Chủ đề → Article Website canonical → ảnh AI → duyệt Article → Facebook/Zalo/LinkedIn → WordPress Draft`.
 
 ## Article Website canonical
 
@@ -20,9 +20,8 @@ Article chỉ được duyệt khi toàn bộ gate bắt buộc đạt. Ảnh ch
 
 ## WordPress boundary
 
-Hiện UI chỉ hiển thị nút `Tạo bản nháp WordPress` ở trạng thái disabled. Preflight chỉ gửi GET để kiểm tra REST root, authenticated user, capability và schema/SEO REST fields.
+Sau WordPress Draft UAT, UI cho phép đúng Article TEST đã duyệt tạo một draft. Thành công sẽ lưu Post/Media ID vào Content, hiển thị `Bản nháp WordPress đã tạo` và khóa nút tạo trùng.
 
-Không có endpoint WordPress write được bật trong V1 trước xác nhận UAT. Không có request POST/PUT/PATCH/DELETE, không publish và không sửa plugin/role/config.
+Endpoint V1 chỉ tạo `status=draft`, không publish/schedule và không sửa plugin/role/config. Job ID, media slug và content marker là deterministic; timeout chỉ lookup/recovery, không create lần hai.
 
-Khi được phê duyệt cho UAT write, draft phải dùng idempotency ID theo Article, chỉ nhận Article đã duyệt + ảnh chính có alt text + SEO gate đạt, và luôn gửi `status=draft`.
-
+Draft chỉ nhận Article đã duyệt + ảnh chính có alt text + SEO gate đạt. Yoast chỉ được sync khi live POST schema expose field writable; hiện tại là `NOT_SYNCED_TO_YOAST`.

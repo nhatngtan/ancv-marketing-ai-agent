@@ -91,3 +91,5 @@ Video Final local-first, AI Copy 5 nền tảng và YouTube private: [docs/VIDEO
 UAT production của luồng hoàn tất và đăng Video V1: [docs/UAT_VIDEO_COMPLETION_PUBLISHING_V1.md](docs/UAT_VIDEO_COMPLETION_PUBLISHING_V1.md).
 
 Article SEO canonical, quality gate và WordPress read-only boundary: [docs/ARTICLE_SEO_WORKFLOW_V1.md](docs/ARTICLE_SEO_WORKFLOW_V1.md). Evidence UAT: [docs/UAT_ARTICLE_SEO_WORKFLOW_V1.md](docs/UAT_ARTICLE_SEO_WORKFLOW_V1.md).
+
+WordPress Draft V1, idempotency và evidence Post/Media thật: [docs/UAT_WORDPRESS_DRAFT_V1.md](docs/UAT_WORDPRESS_DRAFT_V1.md).

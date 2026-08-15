@@ -10,7 +10,7 @@ Cập nhật: 2026-08-15. Chỉ đánh dấu PASS khi request thật đã thành
 | TikTok | Chưa có Developer App/token; portal yêu cầu đăng nhập | Direct Post/upload NOT TESTED | Display/metrics NOT TESTED | Audit chưa bắt đầu | Thủ công | Chưa xác minh creator account; unaudited Direct Post chỉ private/SELF_ONLY |
 | LinkedIn | Chưa có App/token; portal yêu cầu đăng nhập | Posts API NOT TESTED | Organization analytics NOT TESTED | Community Management review chưa bắt đầu | Thủ công | Chưa xác minh Organization URN/Page role |
 | Zalo | Chưa có Zalo App/OA token; portal yêu cầu đăng nhập | Article/video OA API NOT TESTED | OA analytics NOT TESTED | OA/App/plan chưa xác minh | Thủ công | `zalo.me/0932773999` chỉ là contact link công khai, không phải OA ID evidence |
-| Website | Application Password + authenticated `/users/me` PASS | NOT TESTED | Chưa test | N/A | Bán tự động | Website đang xây dựng; connectivity check chỉ dùng GET read-only |
+| Website | Application Password + authenticated `/users/me` PASS | Media upload + đúng 01 Draft PASS; publish/schedule NOT TESTED | Chưa test | N/A | Bán tự động | Post `801`, Media `800`; live UAT giữ draft, không publish |
 | GA4 | Runtime Service Account list PASS | N/A | Chưa PASS `runReport` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development cũng không thấy property ANCV |
 | Search Console | Runtime Service Account list PASS | N/A | Chưa PASS `searchAnalytics.query` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development không có `anninhcanhve.com` |
 
@@ -31,7 +31,9 @@ Cập nhật: 2026-08-15. Chỉ đánh dấu PASS khi request thật đã thành
 - Hai secret đều có version enabled và được mount vào Cloud Run bằng `ancv-cloud-run@ancv-marketing-ai-agent.iam.gserviceaccount.com`; không ghi credential vào source/log/Firestore.
 - WordPress API trả role thực tế `administrator` cho `editor01`, khác với role `Editor` được cung cấp ban đầu. Không thay đổi role; phải rà lại trong WordPress Admin trước khi cho phép write trong tương lai.
 - Article SEO V1 preflight từ revision `ancv-marketing-backend-00048-bzm`: authenticated GET post collection PASS; REST discovery advertise create post/media routes; user capabilities trả `edit_posts=true`, `upload_files=true`; Yoast expose namespace `yoast/v1` và response fields `yoast_head`, `yoast_head_json`. Đây chỉ là evidence READ-ONLY/capability discovery, không phải write PASS.
-- Không gửi request POST/PUT/PATCH/DELETE tới WordPress. Write access, media upload và publishing đều NOT TESTED.
+- WordPress Draft UAT từ revision `ancv-marketing-backend-00049-9rm`: upload đúng 01 image (`Media 800`) và tạo đúng 01 post (`Post 801`) với `status=draft`, đúng slug/title/excerpt/featured image/alt text. Lookup marker/slug trả đúng 1, không duplicate.
+- Live POST schema không expose Yoast write fields nên SEO metadata là `NOT_SYNCED_TO_YOAST`; không gửi `yoast_head`/`yoast_head_json`, không sửa plugin/database/config.
+- Publish, schedule, update và delete vẫn NOT TESTED. Connector giữ `partially_available / semi_automatic`.
 - Kết quả được lưu trong Firestore `connectorTests`; snapshot mới nhất được merge vào `connectors/{platform}`.
 
 ## Authentication production đề xuất
