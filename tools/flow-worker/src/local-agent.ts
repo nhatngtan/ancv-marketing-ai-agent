@@ -18,9 +18,8 @@ import {
 } from "./config.js";
 import { BridgeServer } from "./bridge-server.js";
 import { ChromeProfileManager } from "./profile-manager.js";
-import { persistLocalVideo } from "./local-storage.js";
-import { findNewFlowOutputIds } from "./flow-ui.js";
 import { processPlaywrightJob } from "./worker.js";
+import { assertFlowRuntimeSnapshot } from "./flow-runtime.js";
 import { scanChromeProfiles } from "./chrome-profile-scanner.js";
 
 interface FlowInspection {
@@ -325,6 +324,7 @@ export class LocalAgent {
       const job = document.data() as FlowJobRecord;
       batch.update(document.ref, {
         status: "needs_manual",
+        stage: "needs_manual",
         error: "Local Agent restart khi job đang xử lý; không tự Generate lại.",
         updatedAt: now,
       });
@@ -365,6 +365,7 @@ export class LocalAgent {
       const now = new Date().toISOString();
       transaction.update(ref, {
         status: "processing",
+        stage: "opening_flow",
         startedAt: now,
         updatedAt: now,
         workerInstanceId: this.config.agentId,
@@ -373,7 +374,7 @@ export class LocalAgent {
         flowStatus: "processing",
         updatedAt: now,
       });
-      return { ...job, status: "processing", startedAt: now, updatedAt: now };
+      return { ...job, status: "processing", stage: "opening_flow", startedAt: now, updatedAt: now };
     });
   }
 
@@ -386,6 +387,7 @@ export class LocalAgent {
     const batch = firestore.batch();
     batch.update(firestore.collection("flowJobs").doc(job.id), {
       status: "needs_manual",
+      stage: "needs_manual",
       error: error.slice(0, 500),
       updatedAt: now,
     });
@@ -407,10 +409,6 @@ export class LocalAgent {
   }
 
   private async processFlowJob(job: FlowJobRecord): Promise<void> {
-    if (job.executionMode === "playwright_fallback") {
-      await processPlaywrightJob(job);
-      return;
-    }
     const account = (
       await firestore.collection("flowAccounts").doc(job.flowAccountId).get()
     ).data() as FlowAccountRecord | undefined;
@@ -422,188 +420,17 @@ export class LocalAgent {
       );
       return;
     }
-    let generateClicked = false;
     try {
-      const mapping = await this.profiles.open(
-        job.flowAccountId,
-        job.flowProjectUrl,
-      );
-      await sleep(2_000);
-      await this.bridge.sendCommand(
-        job.flowAccountId,
-        "prepare_flow",
-        {},
-        30_000,
-      );
-      const initialInspection = (await this.bridge.sendCommand(
-        job.flowAccountId,
-        "inspect_flow",
-        {},
-        30_000,
-      )) as FlowInspection;
-      const inspection =
-        initialInspection.session === "ready"
-          ? await this.waitForStableOutputInspection(
-              job.flowAccountId,
-              initialInspection,
-            )
-          : initialInspection;
-      const expected = (
-        mapping.expectedAccount ??
-        account.email ??
-        ""
-      ).toLowerCase();
-      const actual = inspection.email?.toLowerCase() ?? null;
-      if (expected && actual && expected !== actual)
-        throw new Error(
-          `FLOW_ACCOUNT_MISMATCH expected=${expected} actual=${actual}`,
-        );
-      if (inspection.session === "needs_login") {
-        await this.failFlowJob(
-          job,
-          "Google Flow yêu cầu đăng nhập thủ công.",
-          "needs_login",
-        );
-        return;
-      }
-      if (inspection.session === "needs_verification") {
-        await this.failFlowJob(
-          job,
-          "Google Flow yêu cầu xác minh thủ công.",
-          "needs_verification",
-        );
-        return;
-      }
-      if (
-        inspection.session !== "ready" ||
-        !inspection.x1 ||
-        !inspection.generate ||
-        !inspection.prompt
-      )
-        throw new Error(inspection.limitation ?? "FLOW_PREFLIGHT_UNCERTAIN");
-      const expectedProject =
-        job.flowProjectUrl.match(/\/project\/([^/?#]+)/)?.[1];
-      if (
-        !expectedProject ||
-        !inspection.url.includes(`/project/${expectedProject}`)
-      )
-        throw new Error("FLOW_PROJECT_MISMATCH");
-
-      const filled = (await this.bridge.sendCommand(
-        job.flowAccountId,
-        "fill_prompt",
-        { prompt: job.prompt },
-        30_000,
-      )) as { filled?: boolean };
-      if (!filled.filled) throw new Error("FLOW_PROMPT_FILL_FAILED");
-      const baselineIds = new Set(inspection.outputIds ?? []);
-      const intentAt = new Date().toISOString();
-      await firestore
-        .collection("flowJobs")
-        .doc(job.id)
-        .update({
-          generateIntentAt: intentAt,
-          generateClicks: 0,
-          baselineOutputIds: [...baselineIds],
-          updatedAt: intentAt,
-        });
-      const clicked = (await this.bridge.sendCommand(
-        job.flowAccountId,
-        "click_generate",
-        { baselineOutputIds: [...baselineIds] },
-        30_000,
-      )) as {
-        clicked?: boolean;
-        dispatched?: boolean;
-        matches?: number;
-        inputMethod?: string;
-        acceptanceSignal?: boolean;
-        generationRequestObserved?: boolean;
-        responseStatus?: number | null;
-        processingObserved?: boolean;
-        debuggerDetached?: boolean;
-      };
-      generateClicked = Boolean(clicked.dispatched);
-      if (generateClicked) {
-        await firestore.collection("flowJobs").doc(job.id).update({
-          generateClicks: 1,
-          generateInputMethod: clicked.inputMethod ?? "cdp_mouse",
-          generationAcceptanceSignal: Boolean(clicked.acceptanceSignal),
-          generationRequestObserved: Boolean(clicked.generationRequestObserved),
-          generationResponseStatus: clicked.responseStatus ?? null,
-          processingObserved: Boolean(clicked.processingObserved),
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      if (!clicked.clicked || !clicked.dispatched || clicked.matches !== 1)
-        throw new Error(
-          `FLOW_GENERATE_AMBIGUOUS matches=${clicked.matches ?? 0}`,
-        );
-      if (!clicked.debuggerDetached) throw new Error("FLOW_DEBUGGER_NOT_DETACHED");
-      if (!clicked.acceptanceSignal)
-        throw new Error("FLOW_GENERATE_NOT_ACCEPTED_NO_RETRY");
-
-      const deadline = Date.now() + 15 * 60_000;
-      let output: FlowInspection | null = null;
-      let newOutputId: string | null = null;
-      while (Date.now() < deadline) {
-        await sleep(5_000);
-        output = (await this.bridge.sendCommand(
-          job.flowAccountId,
-          "inspect_flow",
-          {},
-          30_000,
-        )) as FlowInspection;
-        const candidates = findNewFlowOutputIds([...baselineIds], output.outputIds ?? [], output.detailId);
-        if (candidates.length === 1) { newOutputId = candidates[0]!; break; }
-        if (candidates.length > 1) throw new Error(`FLOW_OUTPUT_AMBIGUOUS_NEW_IDS:${candidates.length}`);
-        if (output.generationError) throw new Error('FLOW_GENERATION_FAILED_NO_RETRY');
-      }
-      if (!output || !newOutputId)
-        throw new Error(output?.processing ? "FLOW_OUTPUT_STILL_PROCESSING_NO_RETRY" : "FLOW_OUTPUT_TIMEOUT_NO_RETRY");
-      await firestore.collection("flowJobs").doc(job.id).update({ flowDetailId: newOutputId, updatedAt: new Date().toISOString() });
-      const opened = (await this.bridge.sendCommand(
-        job.flowAccountId,
-        "open_output",
-        { outputId: newOutputId },
-        30_000,
-      )) as { opened?: boolean };
-      if (!opened.opened) throw new Error("FLOW_OUTPUT_OPEN_FAILED");
-      await sleep(1_500);
-      const download = (await this.bridge.sendCommand(
-        job.flowAccountId,
-        "download_latest",
-        {},
-        150_000,
-      )) as { filename?: string; bytesReceived?: number };
-      if (!download.filename || Number(download.bytesReceived ?? 0) < 1_024)
-        throw new Error("FLOW_DOWNLOAD_INVALID");
-      const asset = await persistLocalVideo(job, download.filename);
-      console.log(
-        JSON.stringify({
-          event: "local_agent_flow_succeeded",
-          jobId: job.id,
-          assetId: asset.id,
-          storageType: "local",
-          relativePath: asset.relativePath,
-          generateClicks: 1,
-        }),
-      );
+      assertFlowRuntimeSnapshot(job, account, this.profiles.mapping(job.flowAccountId));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      await this.failFlowJob(
-        job,
-        `Local Agent dừng an toàn: ${detail}${generateClicked ? "; Generate đã xảy ra, không retry." : ""}`,
-      );
-      console.log(
-        JSON.stringify({
-          event: "local_agent_flow_stopped",
-          jobId: job.id,
-          generateClicked,
-          error: detail,
-        }),
-      );
+      await this.failFlowJob(job, error instanceof Error ? error.message : "FLOW_RUNTIME_MAPPING_INVALID", "unavailable");
+      return;
     }
+    if (job.executionMode === "playwright_fallback") {
+      await processPlaywrightJob(job);
+      return;
+    }
+    await this.failFlowJob(job, "FLOW_LEGACY_EXECUTION_MODE_DISABLED");
   }
 
   private async nextLocalCommand(): Promise<LocalCommandRecord | null> {
@@ -722,20 +549,11 @@ export class LocalAgent {
     if (!mapping || mapping.chromeProfileId !== command.chromeProfileId) throw new Error("PROFILE_MAPPING_CHANGED");
     const now = new Date().toISOString();
     if (command.platform === "google_flow") {
-      const account = (await firestore.collection("flowAccounts").doc("account-01").get()).data() as FlowAccountRecord | undefined;
-      if (!account?.projectUrl) throw new Error("FLOW_PROJECT_URL_REQUIRED");
-      await this.profiles.openSystemProfile("profile-google-flow", command.chromeProfileId, account.projectUrl);
-      await sleep(2_000);
-      await this.bridge.sendCommand("profile-google-flow", "prepare_flow", {}, 30_000);
-      await sleep(1_000);
-      const inspection = await this.bridge.sendCommand("profile-google-flow", "inspect_flow", {}, 30_000) as FlowInspection;
-      const profileStatus: BrowserProfileStatus = inspection.session === "ready" ? "ready" : inspection.session === "needs_login" ? "login_required" : "unavailable";
-      const platformStatus: BrowserPlatformStatus = inspection.session === "needs_verification" ? "verification_required" : inspection.session === "needs_login" ? "login_required" : inspection.session === "ready" ? "ready_for_write_test" : "unavailable";
       await settingsRef.update({ validations: {
         ...(settings.data()?.validations ?? {}),
-        google_flow: { profileStatus, platformStatus, validatedAt: now, chromeProfileId: command.chromeProfileId, detail: inspection.limitation ?? null, detectedAccount: inspection.email ?? null },
+        google_flow: { profileStatus: "unavailable", platformStatus: "unavailable", validatedAt: now, chromeProfileId: command.chromeProfileId, detail: "Google Flow chỉ dùng ANCV managed profile; System Chrome profile bị từ chối.", detectedAccount: null },
       }, updatedAt: now });
-      return;
+      throw new Error("FLOW_SYSTEM_PROFILE_NOT_ALLOWED_USE_MANAGED_PREFLIGHT");
     }
     const logicalId = `profile-${command.platform}`;
     await this.profiles.openSystemProfile(logicalId, command.chromeProfileId, socialUrls[command.platform]);

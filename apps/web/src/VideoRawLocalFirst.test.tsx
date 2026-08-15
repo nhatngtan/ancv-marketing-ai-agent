@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { ContentRecord, MediaAssetRecord, SceneRecord } from "@ancv/shared";
+import type { ContentRecord, FlowJobRecord, MediaAssetRecord, SceneRecord } from "@ancv/shared";
 import { describe, expect, it, vi } from "vitest";
 
 const fixtures = vi.hoisted(() => {
@@ -99,8 +99,15 @@ vi.mock("./lib/repository", () => {
 });
 
 import { ContentStudioPage } from "./components/ContentStudio";
+import { flowErrorMessage, flowProgressLabel } from "./lib/flow-status";
 
 describe("Video Raw local-first UAT", () => {
+  it("shows safe Vietnamese progress and error states without technical details", () => {
+    expect(flowProgressLabel({ status: "processing", stage: "filling_prompt" } as FlowJobRecord)).toBe("Đang nhập Prompt…");
+    expect(flowErrorMessage("FLOW_CDP_START_TIMEOUT_CLOSE_LOGIN_CHROME")).toBe("Không thể kết nối máy xử lý.");
+    expect(flowErrorMessage("FLOW_ACCOUNT_MISMATCH expected=a actual=b")).toBe("Sai tài khoản Google Flow.");
+  });
+
   it("shows the recovered Google Flow asset on its Scene", async () => {
     const now = "2026-08-14T09:48:46.000Z";
     const content = {

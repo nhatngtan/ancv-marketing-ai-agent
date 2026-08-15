@@ -15,6 +15,16 @@ export function dataRoot(): string {
   return resolve(process.env.FLOW_WORKER_DATA || join(localAppData, 'ANCV', 'flow-worker-data'));
 }
 
+export function automationProfilesRoot(): string {
+  const localAppData = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
+  return resolve(localAppData, 'ANCV', 'flow-profiles');
+}
+
+export function dedicatedFlowProfilePath(profileName: string): string {
+  const safeName = validateAccountId(profileName);
+  return resolve(automationProfilesRoot(), safeName);
+}
+
 export interface LocalProfileMapping {
   logicalId: string;
   kind: 'managed' | 'system';

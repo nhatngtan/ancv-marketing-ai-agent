@@ -6,12 +6,57 @@ export interface FlowUiInspection {
   prompt: LocatedControl | null;
   video: LocatedControl | null;
   generate: LocatedControl | null;
+  approval: LocatedControl | null;
   limitation?: string;
 }
 
 export interface LocatedControl { key: string; locator: Locator }
+export interface FlowDownloadReadiness {
+  state: 'OUTPUT_RENDERING' | 'DOWNLOAD_READY' | 'OUTPUT_FAILED';
+  control: LocatedControl | null;
+  disabledAttribute: string | null;
+  ariaDisabled: string | null;
+  enabled: boolean;
+  failureText?: string;
+}
+export interface GenerateCandidateEvidence {
+  icon: string;
+  ariaHasPopup: string | null;
+  ariaDisabled: string | null;
+  text: string;
+}
 
 export const generateButtonTextPattern = /^(?:(?:arrow_forward|add_2)\s*)?(?:Tạo|Generate)(?:\s+video)?$/i;
+export const approvalButtonTextPattern = /^(?:(?:check|done)\s*)?(?:Phê duyệt|Xác nhận|Approve|Confirm)$/i;
+
+export function selectGenerateCandidateIndex(candidates: GenerateCandidateEvidence[]): number | null {
+  const matches = candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => candidate.icon === 'arrow_forward' && candidate.ariaHasPopup !== 'dialog');
+  return matches.length === 1 ? matches[0]!.index : null;
+}
+
+export async function findFlowGenerateControl(page: Page, prompt: LocatedControl | null): Promise<LocatedControl | null> {
+  if (!prompt) return null;
+  const composer = prompt.locator.locator('xpath=ancestor::div[.//button[.//i[normalize-space()="arrow_forward"]]][1]');
+  if (await composer.count() !== 1) return null;
+  const buttons = composer.locator('button');
+  const visibleButtons: Locator[] = [];
+  const evidence: GenerateCandidateEvidence[] = [];
+  for (let index = 0; index < await buttons.count(); index += 1) {
+    const button = buttons.nth(index);
+    if (!await button.isVisible()) continue;
+    visibleButtons.push(button);
+    evidence.push({
+      icon: (await button.locator('i.google-symbols').first().textContent().catch(() => '') ?? '').trim(),
+      ariaHasPopup: await button.getAttribute('aria-haspopup'),
+      ariaDisabled: await button.getAttribute('aria-disabled'),
+      text: (await button.innerText().catch(() => '')).trim().replace(/\s+/g, ' '),
+    });
+  }
+  const selectedIndex = selectGenerateCandidateIndex(evidence);
+  return selectedIndex === null ? null : { key: 'generate-prompt-submit', locator: visibleButtons[selectedIndex]! };
+}
 
 export function flowProjectBaseUrl(value: string): string {
   try {
@@ -23,17 +68,6 @@ export function flowProjectBaseUrl(value: string): string {
   } catch {
     return '';
   }
-}
-
-export async function detectGoogleAccountEmail(page: Page): Promise<string | null> {
-  const accountLinks = page.locator('a[href*="accounts.google.com/AccountChooser"][href*="Email="]');
-  for (let index = 0; index < await accountLinks.count(); index += 1) {
-    const href = await accountLinks.nth(index).getAttribute('href');
-    if (!href) continue;
-    const email = new URL(href).searchParams.get('Email')?.trim().toLowerCase();
-    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return email;
-  }
-  return null;
 }
 
 export interface VisibleControlSummary {
@@ -120,10 +154,10 @@ export async function openExistingFlowProject(page: Page, preferredUrl: string, 
 
 export async function inspectFlowUi(page: Page): Promise<FlowUiInspection> {
   const url = page.url();
-  if (/accounts\.google\.com|signin/i.test(url)) return { url, session: 'needs_login', prompt: null, video: null, generate: null };
+  if (/accounts\.google\.com|signin/i.test(url)) return { url, session: 'needs_login', prompt: null, video: null, generate: null, approval: null };
   const pageText = (await page.locator('body').innerText().catch(() => '')).slice(0, 20_000);
   if (/captcha|verify (it'?s you|your identity)|xác minh (danh tính|tài khoản)|2-step verification|xác minh 2 bước|unusual activity/i.test(pageText)) {
-    return { url, session: 'needs_verification', prompt: null, video: null, generate: null, limitation: 'Google yêu cầu xác minh thủ công.' };
+    return { url, session: 'needs_verification', prompt: null, video: null, generate: null, approval: null, limitation: 'Google yêu cầu xác minh thủ công.' };
   }
   const prompt = await uniqueVisible([
     { key: 'prompt-aria', locator: page.getByRole('textbox', { name: /prompt|describe|mô tả/i }) },
@@ -138,15 +172,30 @@ export async function inspectFlowUi(page: Page): Promise<FlowUiInspection> {
     { key: 'video-button', locator: page.getByRole('button', { name: /^video$/i }) },
     { key: 'video-text-button', locator: page.locator('button').filter({ hasText: /^video$/i }) },
   ]);
-  const generate = await uniqueVisible([
-    { key: 'generate-icon-button', locator: page.locator('button').filter({ hasText: generateButtonTextPattern }) },
-    { key: 'generate-button', locator: page.getByRole('button', { name: /^(generate|generate video|tạo|tạo video)$/i }) },
-    { key: 'generate-text-button', locator: page.locator('button').filter({ hasText: /^(generate|generate video|tạo|tạo video)$/i }) },
-  ]);
+  const generate = await findFlowGenerateControl(page, prompt);
+  const approval = await findFlowApprovalControl(page);
   if (!prompt || !video || !generate) {
-    return { url, session: 'unavailable', prompt, video, generate, limitation: 'Không xác định chắc chắn prompt/Video/Generate trên UI hiện tại.' };
+    return { url, session: 'unavailable', prompt, video, generate, approval, limitation: 'Không xác định chắc chắn prompt/Video/Generate trên UI hiện tại.' };
   }
-  return { url, session: 'ready', prompt, video, generate };
+  return { url, session: 'ready', prompt, video, generate, approval };
+}
+
+export async function findFlowApprovalControl(page: Page): Promise<LocatedControl | null> {
+  const dialog = page.getByRole('dialog');
+  return uniqueVisible([
+    { key: 'approval-dialog-button', locator: dialog.getByRole('button', { name: /^(Phê duyệt|Xác nhận|Approve|Confirm)$/i }) },
+    { key: 'approval-dialog-text-button', locator: dialog.locator('button').filter({ hasText: approvalButtonTextPattern }) },
+  ]);
+}
+
+export async function waitForFlowApprovalControl(page: Page, timeoutMs = 15_000): Promise<LocatedControl | null> {
+  const deadline = Date.now() + timeoutMs;
+  let approval = await findFlowApprovalControl(page);
+  while (!approval && Date.now() < deadline) {
+    await page.waitForTimeout(500);
+    approval = await findFlowApprovalControl(page);
+  }
+  return approval;
 }
 
 export async function waitForFlowUi(page: Page, timeoutMs = 30_000): Promise<FlowUiInspection> {
@@ -356,4 +405,54 @@ export async function findDownloadControl(page: Page): Promise<LocatedControl | 
     ]);
   }
   return download;
+}
+
+const renderFailurePattern = /(?:generation|render|video).*(?:failed|error)|(?:failed|error).*(?:generation|render|video)|(?:tạo|kết xuất|video).*(?:thất bại|bị lỗi)/i;
+
+export function isDownloadControlReady(evidence: {
+  visible: boolean;
+  enabled: boolean;
+  disabledAttribute: string | null;
+  ariaDisabled: string | null;
+}): boolean {
+  return evidence.visible
+    && evidence.enabled
+    && evidence.disabledAttribute === null
+    && evidence.ariaDisabled?.toLowerCase() !== 'true';
+}
+
+export async function inspectFlowDownloadReadiness(page: Page): Promise<FlowDownloadReadiness> {
+  const statusTexts = await page.locator('[role="alert"],[role="status"],[aria-live]').allInnerTexts();
+  const failureText = statusTexts
+    .map((value) => value.replace(/\s+/g, ' ').trim())
+    .find((value) => renderFailurePattern.test(value));
+  if (failureText) {
+    return {
+      state: 'OUTPUT_FAILED', control: null, disabledAttribute: null,
+      ariaDisabled: null, enabled: false, failureText: failureText.slice(0, 240),
+    };
+  }
+
+  const control = await findDownloadControl(page);
+  if (!control) {
+    return {
+      state: 'OUTPUT_RENDERING', control: null, disabledAttribute: null,
+      ariaDisabled: null, enabled: false,
+    };
+  }
+  const [visible, enabled, disabledAttribute, ariaDisabled] = await Promise.all([
+    control.locator.isVisible().catch(() => false),
+    control.locator.isEnabled().catch(() => false),
+    control.locator.getAttribute('disabled'),
+    control.locator.getAttribute('aria-disabled'),
+  ]);
+  return {
+    state: isDownloadControlReady({ visible, enabled, disabledAttribute, ariaDisabled })
+      ? 'DOWNLOAD_READY'
+      : 'OUTPUT_RENDERING',
+    control,
+    disabledAttribute,
+    ariaDisabled,
+    enabled,
+  };
 }

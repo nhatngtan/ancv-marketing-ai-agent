@@ -25,6 +25,19 @@ export type PublishingStatus = 'pending' | 'processing' | 'published' | 'needs_a
 export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type FlowAccountStatus = 'ready' | 'needs_login' | 'needs_verification' | 'unavailable';
 export type FlowJobStatus = 'queued' | 'processing' | 'succeeded' | 'needs_manual';
+export type FlowJobStage =
+  | 'queued'
+  | 'opening_flow'
+  | 'filling_prompt'
+  | 'generating'
+  | 'waiting_output'
+  | 'output_detected'
+  | 'output_rendering'
+  | 'output_ready'
+  | 'download_ready'
+  | 'downloading'
+  | 'completed'
+  | 'needs_manual';
 export type LocalAgentStatus = 'online' | 'offline' | 'starting' | 'error';
 export type AIOperation = 'scene_breakdown' | 'scene_regeneration' | 'flow_prompt' | 'video_social_copy' | 'article_generation' | 'article_platform_copy' | 'image_generation' | 'report_analysis';
 
@@ -172,7 +185,12 @@ export interface FlowAccountRecord extends AuditFields {
   status: FlowAccountStatus;
   label: string;
   email?: string;
+  expectedAccount?: string;
+  verifiedAccount?: string;
+  verifiedAt?: string;
   projectUrl?: string;
+  profileKind?: 'managed' | 'system';
+  managedProfileId?: string;
   chromeProfileId?: string;
   lastCheckedAt?: string;
   limitation?: string;
@@ -180,6 +198,7 @@ export interface FlowAccountRecord extends AuditFields {
 
 export interface FlowJobRecord extends AuditFields {
   status: FlowJobStatus;
+  stage?: FlowJobStage;
   contentDocId: string;
   contentId: string;
   sceneId: string;
@@ -189,6 +208,9 @@ export interface FlowJobRecord extends AuditFields {
   aspectRatio?: '9:16' | '16:9';
   flowAccountId: string;
   flowProjectUrl: string;
+  expectedAccount?: string;
+  profileKind?: 'managed' | 'system';
+  managedProfileId?: string;
   chromeProfileId?: string;
   flowAccountEmail?: string;
   attempt: number;

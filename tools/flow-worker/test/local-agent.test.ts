@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { FlowJobRecord } from '@ancv/shared';
+import type { FlowAccountRecord, FlowJobRecord } from '@ancv/shared';
 import { localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
-import { findNewCompletedDownloads, flowJobTempRelativePath } from '../src/worker.js';
+import { downloadReadinessFailure, findNewCompletedDownloads, flowJobTempRelativePath, runDownloadReadinessStateMachine } from '../src/worker.js';
 import { parseChromeProfiles } from '../src/chrome-profile-scanner.js';
 import { runAgentIteration } from '../src/local-agent.js';
+import { assertFlowRuntimeSnapshot } from '../src/flow-runtime.js';
+import { extractGoogleAccountEmails } from '../src/google-account.js';
 
 const config: LocalAgentConfig = {
   agentId: 'ancv-windows-01', machineName: 'TEST', workspaceRoot: 'D:\\ANCV Marketing',
@@ -47,6 +49,49 @@ describe('Flow download detection', () => {
     const job = { id: 'scene-01', contentId: 'ANCV-VID-2026-004', sceneNumber: 2 } as FlowJobRecord;
     expect(flowJobTempRelativePath(job)).toBe('.tmp/flow/scene-01/ANCV-VID-2026-004_S02_T01.mp4');
   });
+
+  it('waits through repeated disabled polls and clicks Download exactly once when enabled', async () => {
+    let clock = 0;
+    let probes = 0;
+    let downloadClicks = 0;
+    const states: string[] = [];
+    const result = await runDownloadReadinessStateMachine({
+      deadlineAt: 10_000,
+      pollIntervalMs: 1_000,
+      now: () => clock,
+      wait: async (milliseconds) => { clock += milliseconds; },
+      probe: async () => {
+        probes += 1;
+        return probes < 4
+          ? { state: 'OUTPUT_RENDERING' as const, control: null }
+          : { state: 'DOWNLOAD_READY' as const, control: { id: 'download' } };
+      },
+      onState: async (state) => { states.push(state); },
+      download: async () => { downloadClicks += 1; },
+    });
+    expect(result).toEqual({ status: 'downloaded' });
+    expect(downloadClicks).toBe(1);
+    expect(states).toEqual(['OUTPUT_DETECTED', 'OUTPUT_RENDERING', 'OUTPUT_READY', 'DOWNLOAD_READY', 'DOWNLOAD']);
+  });
+
+  it('times out while Download remains disabled without changing the single Generate click', async () => {
+    let clock = 0;
+    let downloadClicks = 0;
+    const generateClicks = 1;
+    const result = await runDownloadReadinessStateMachine({
+      deadlineAt: 3_000,
+      pollIntervalMs: 1_000,
+      now: () => clock,
+      wait: async (milliseconds) => { clock += milliseconds; },
+      probe: async () => ({ state: 'OUTPUT_RENDERING' as const, control: null }),
+      onState: async () => undefined,
+      download: async () => { downloadClicks += 1; },
+    });
+    expect(result).toEqual({ status: 'timeout' });
+    expect(downloadReadinessFailure(result)).toEqual({ status: 'needs_manual', error: 'FLOW_OUTPUT_NOT_READY_TIMEOUT' });
+    expect(downloadClicks).toBe(0);
+    expect(generateClicks).toBe(1);
+  });
 });
 
 describe('safe Chrome profile scanning', () => {
@@ -77,5 +122,38 @@ describe('Local Agent iteration resilience', () => {
     expect(await runAgentIteration(work, async () => { errorHeartbeats += 1; }, async () => undefined)).toBe(true);
     expect(errorHeartbeats).toBe(1);
     expect(processedJobs).toBe(1);
+  });
+});
+
+describe('Flow runtime fail-closed checks', () => {
+  const account = {
+    status: 'ready', profileKind: 'managed', managedProfileId: 'flow-gold',
+    email: 'ashimigold@gmail.com', projectUrl: 'https://labs.google/fx/vi/tools/flow/project/project-1',
+  } as FlowAccountRecord;
+  const job = {
+    profileKind: 'managed', managedProfileId: 'flow-gold', expectedAccount: 'ashimigold@gmail.com',
+    flowProjectUrl: 'https://labs.google/fx/vi/tools/flow/project/project-1',
+  } as FlowJobRecord;
+  const mapping = {
+    logicalId: 'flow-gold', kind: 'managed' as const,
+    userDataDir: 'C:\\Users\\ANCV-MK\\AppData\\Local\\ANCV\\flow-profiles\\gold',
+    expectedAccount: 'ashimigold@gmail.com',
+  };
+
+  it('rejects a project snapshot mismatch', () => {
+    expect(() => assertFlowRuntimeSnapshot({ ...job, flowProjectUrl: 'https://labs.google/fx/vi/tools/flow/project/wrong' }, account, mapping))
+      .toThrow('FLOW_PROJECT_MAPPING_MISMATCH');
+  });
+
+  it('accepts the matching managed GOLD snapshot', () => {
+    expect(() => assertFlowRuntimeSnapshot(job, account, mapping)).not.toThrow();
+  });
+});
+
+describe('Google Account verification metadata', () => {
+  it('extracts only the active account email from the Google Account control', () => {
+    expect(extractGoogleAccountEmails([
+      'Tài khoản Google: Ashimi GOLD (ashimigold@gmail.com), Cảnh báo quan trọng về tài khoản',
+    ])).toEqual(['ashimigold@gmail.com']);
   });
 });

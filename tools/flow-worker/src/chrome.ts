@@ -1,21 +1,37 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { readFile, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
-import { accountProfilePath, chromeExecutable, ensureLocalDirectories, flowConfig, loadLocalAgentConfig, type LocalProfileMapping } from './config.js';
+import { join, resolve, sep } from 'node:path';
+import { automationProfilesRoot, chromeExecutable, dataRoot, ensureLocalDirectories, flowConfig, loadLocalAgentConfig, type LocalProfileMapping } from './config.js';
 
-function automationProfile(accountId: string, expectedProfileDirectory?: string): LocalProfileMapping {
-  if (!expectedProfileDirectory) return { logicalId: accountId, kind: 'managed', userDataDir: accountProfilePath(accountId) };
-  const configured = loadLocalAgentConfig().profiles.find((profile) => profile.logicalId === accountId);
-  const mapping = configured ?? { logicalId: accountId, kind: 'managed' as const, userDataDir: accountProfilePath(accountId) };
-  if (expectedProfileDirectory && mapping.profileDirectory !== expectedProfileDirectory) {
-    throw new Error(`FLOW_PROFILE_MAPPING_MISMATCH expected=${expectedProfileDirectory} actual=${mapping.profileDirectory ?? 'managed'}`);
+function pathInside(root: string, target: string): boolean {
+  const resolvedRoot = resolve(root);
+  const resolvedTarget = resolve(target);
+  return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(`${resolvedRoot}${sep}`);
+}
+
+export function assertManagedFlowProfile(mapping: LocalProfileMapping, expectedProfileId?: string): LocalProfileMapping {
+  if (mapping.kind !== 'managed') throw new Error('FLOW_SYSTEM_PROFILE_NOT_ALLOWED');
+  if (expectedProfileId && mapping.logicalId !== expectedProfileId) {
+    throw new Error(`FLOW_PROFILE_MAPPING_MISMATCH expected=${expectedProfileId} actual=${mapping.logicalId}`);
+  }
+  if (!pathInside(automationProfilesRoot(), mapping.userDataDir) && !pathInside(dataRoot(), mapping.userDataDir)) {
+    throw new Error('FLOW_MANAGED_PROFILE_OUTSIDE_ANCV_ROOT');
   }
   return mapping;
 }
 
+export function resolveManagedFlowProfile(accountId: string, expectedProfileId?: string): LocalProfileMapping {
+  const configured = loadLocalAgentConfig().profiles.find((profile) => profile.logicalId === accountId);
+  if (!configured) throw new Error(`LOCAL_PROFILE_MAPPING_NOT_FOUND:${accountId}`);
+  return assertManagedFlowProfile(configured, expectedProfileId);
+}
+
 export function chromeLoginArgs(accountId: string): string[] {
+  const profile = resolveManagedFlowProfile(accountId);
   return [
-    `--user-data-dir=${accountProfilePath(accountId)}`,
+    `--user-data-dir=${profile.userDataDir}`,
+    ...(profile.profileDirectory ? [`--profile-directory=${profile.profileDirectory}`] : []),
     '--no-first-run',
     '--no-default-browser-check',
     '--new-window',
@@ -23,8 +39,8 @@ export function chromeLoginArgs(accountId: string): string[] {
   ];
 }
 
-export function chromeAutomationArgs(accountId: string, expectedProfileDirectory?: string): string[] {
-  const profile = automationProfile(accountId, expectedProfileDirectory);
+export function chromeAutomationArgs(accountId: string, expectedProfileId?: string): string[] {
+  const profile = resolveManagedFlowProfile(accountId, expectedProfileId);
   return [
     `--user-data-dir=${profile.userDataDir}`,
     ...(profile.profileDirectory ? [`--profile-directory=${profile.profileDirectory}`] : []),
@@ -37,7 +53,9 @@ export function chromeAutomationArgs(accountId: string, expectedProfileDirectory
 }
 
 export function openLoginChrome(accountId: string): void {
-  ensureLocalDirectories(accountId);
+  const profile = resolveManagedFlowProfile(accountId);
+  ensureLocalDirectories();
+  mkdirSync(profile.userDataDir, { recursive: true });
   const child = spawn(chromeExecutable(), chromeLoginArgs(accountId), {
     detached: true,
     stdio: 'ignore',
@@ -46,16 +64,17 @@ export function openLoginChrome(accountId: string): void {
   child.unref();
 }
 
-function devToolsActivePortPath(accountId: string, expectedProfileDirectory?: string): string {
-  return join(automationProfile(accountId, expectedProfileDirectory).userDataDir, 'DevToolsActivePort');
+function devToolsActivePortPath(accountId: string, expectedProfileId?: string): string {
+  return join(resolveManagedFlowProfile(accountId, expectedProfileId).userDataDir, 'DevToolsActivePort');
 }
 
-export async function startDebugChrome(accountId: string, expectedProfileDirectory?: string): Promise<{ process: ChildProcess; port: number }> {
-  const profile = automationProfile(accountId, expectedProfileDirectory);
-  if (profile.kind === 'managed') ensureLocalDirectories(accountId);
-  const portFile = devToolsActivePortPath(accountId, expectedProfileDirectory);
+export async function startDebugChrome(accountId: string, expectedProfileId?: string): Promise<{ process: ChildProcess; port: number }> {
+  const profile = resolveManagedFlowProfile(accountId, expectedProfileId);
+  ensureLocalDirectories();
+  mkdirSync(profile.userDataDir, { recursive: true });
+  const portFile = devToolsActivePortPath(accountId, expectedProfileId);
   await unlink(portFile).catch(() => undefined);
-  const chromeProcess = spawn(chromeExecutable(), chromeAutomationArgs(accountId, expectedProfileDirectory), {
+  const chromeProcess = spawn(chromeExecutable(), chromeAutomationArgs(accountId, expectedProfileId), {
     stdio: 'ignore',
     windowsHide: false,
   });

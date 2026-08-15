@@ -61,26 +61,24 @@ export async function createFlowJobWithCurrentState(input: z.infer<typeof create
   const contentRef = store.collection('contents').doc(input.contentDocId);
   const sceneRef = store.collection('scenes').doc(input.sceneId);
   const accountRef = store.collection('flowAccounts').doc(input.flowAccountId);
-  const browserProfilesRef = store.collection('systemSettings').doc('browserProfiles');
   const jobRef = store.collection('flowJobs').doc(input.sceneId);
   const now = new Date().toISOString();
   return store.runTransaction(async (transaction) => {
-    const [contentSnapshot, sceneSnapshot, accountSnapshot, browserProfilesSnapshot, jobSnapshot] = await Promise.all([
-      transaction.get(contentRef), transaction.get(sceneRef), transaction.get(accountRef), transaction.get(browserProfilesRef), transaction.get(jobRef),
+    const [contentSnapshot, sceneSnapshot, accountSnapshot, jobSnapshot] = await Promise.all([
+      transaction.get(contentRef), transaction.get(sceneRef), transaction.get(accountRef), transaction.get(jobRef),
     ]);
     if (!contentSnapshot.exists || contentSnapshot.data()?.type !== 'video') throw Object.assign(new Error('VIDEO_CONTENT_NOT_FOUND'), { statusCode: 404 });
     if (!sceneSnapshot.exists || sceneSnapshot.data()?.contentDocId !== input.contentDocId) throw Object.assign(new Error('SCENE_NOT_FOUND'), { statusCode: 404 });
     if (!accountSnapshot.exists) throw Object.assign(new Error('FLOW_ACCOUNT_NOT_FOUND'), { statusCode: 409 });
     const account = accountSnapshot.data() as FlowAccountRecord;
     if (account.status !== 'ready') throw Object.assign(new Error('FLOW_ACCOUNT_NOT_READY'), { statusCode: 409 });
-    const browserProfiles = browserProfilesSnapshot.data() as BrowserProfileSettings | undefined;
-    const mapping = browserProfiles?.mappings?.google_flow;
-    const validation = browserProfiles?.validations?.google_flow;
-    if (!mapping || validation?.platformStatus !== 'ready_for_write_test' || validation.chromeProfileId !== mapping.chromeProfileId) {
-      throw Object.assign(new Error('FLOW_PROFILE_MAPPING_NOT_READY'), { statusCode: 409 });
-    }
-    if (account.chromeProfileId && account.chromeProfileId !== mapping.chromeProfileId) {
-      throw Object.assign(new Error('FLOW_PROFILE_MAPPING_MISMATCH'), { statusCode: 409 });
+    if (account.profileKind !== 'managed') throw Object.assign(new Error('FLOW_MANAGED_PROFILE_REQUIRED'), { statusCode: 409 });
+    const managedProfileId = account.managedProfileId?.trim() ?? '';
+    if (!/^[a-z0-9][a-z0-9-]{1,48}$/.test(managedProfileId)) throw Object.assign(new Error('FLOW_MANAGED_PROFILE_NOT_CONFIGURED'), { statusCode: 409 });
+    const expectedAccount = (account.expectedAccount ?? account.email)?.trim().toLowerCase() ?? '';
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(expectedAccount)) throw Object.assign(new Error('FLOW_EXPECTED_ACCOUNT_REQUIRED'), { statusCode: 409 });
+    if (account.verifiedAccount?.trim().toLowerCase() !== expectedAccount || !account.verifiedAt) {
+      throw Object.assign(new Error('FLOW_ACCOUNT_NOT_VERIFIED'), { statusCode: 409 });
     }
     const content = contentSnapshot.data() as ContentRecord;
     const projectUrl = account.projectUrl ?? content.flowProjectUrl ?? '';
@@ -93,10 +91,10 @@ export async function createFlowJobWithCurrentState(input: z.infer<typeof create
       sceneId: input.sceneId, sceneNumber: scene.sceneNumber, prompt: input.generationPrompt,
       durationEstimate: input.durationEstimate, aspectRatio: input.aspectRatio,
       flowAccountId: input.flowAccountId, flowProjectUrl: projectUrl,
-      chromeProfileId: mapping.chromeProfileId,
-      ...(account.email ? { flowAccountEmail: account.email } : {}),
+      profileKind: 'managed', managedProfileId, expectedAccount,
+      flowAccountEmail: expectedAccount,
       executionMode: 'playwright_fallback', storageStrategy: 'local_first',
-      status: 'queued', attempt: Number(existing?.attempt ?? 0) + 1, error: null,
+      status: 'queued', stage: 'queued', attempt: Number(existing?.attempt ?? 0) + 1, error: null,
       createdAt: existing?.createdAt ?? now, updatedAt: now, createdBy: uid,
     };
     transaction.set(jobRef, record);

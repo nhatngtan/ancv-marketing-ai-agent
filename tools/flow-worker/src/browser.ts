@@ -8,8 +8,8 @@ export interface AccountBrowserSession {
   close: () => Promise<void>;
 }
 
-export async function connectAccountContext(accountId: string, expectedProfileDirectory?: string): Promise<AccountBrowserSession> {
-  const launched = await startDebugChrome(accountId, expectedProfileDirectory);
+export async function connectAccountContext(accountId: string, expectedProfileId?: string): Promise<AccountBrowserSession> {
+  const launched = await startDebugChrome(accountId, expectedProfileId);
   let browser: Browser;
   try {
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${launched.port}`, { timeout: 15_000 });

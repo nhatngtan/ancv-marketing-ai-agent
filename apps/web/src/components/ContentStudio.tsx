@@ -63,6 +63,7 @@ import {
   updateContent,
   uploadMedia,
 } from "../lib/repository";
+import { flowErrorMessage, flowProgressLabel } from "../lib/flow-status";
 
 function AdvancedSection({
   label,
@@ -141,12 +142,6 @@ const statusLabels: Record<string, string> = {
   partially_published: "Đã đăng một phần",
   archived: "Lưu trữ",
   test: "TEST",
-};
-const flowStatusLabels: Record<string, string> = {
-  queued: "Chờ xử lý",
-  processing: "Đang xử lý",
-  succeeded: "Thành công",
-  needs_manual: "Cần xử lý thủ công",
 };
 const flowAccountStatusLabels: Record<string, string> = {
   ready: "Sẵn sàng",
@@ -902,7 +897,7 @@ function SceneEditor({
                           : "warning"
                     }
                   >
-                    {flowStatusLabels[job.status]}
+                    {flowProgressLabel(job)}
                   </Badge>
                 )}
               </div>
@@ -1070,13 +1065,13 @@ function FlowComposer({
           title={disabledReason || "Tạo video cho Scene này"}
           onClick={onGenerate}
         >
-          {active ? "Đang tạo video…" : "Tạo video"}
+          {active && job ? flowProgressLabel(job) : "Tạo video"}
           {!active && <ArrowRight size={16} />}
         </button>
       </div>
       {(disabledReason || job?.error) && (
         <small className={job?.error ? "composer-error" : "composer-help"}>
-          {job?.error || disabledReason}
+          {flowErrorMessage(job?.error) || disabledReason}
         </small>
       )}
     </div>

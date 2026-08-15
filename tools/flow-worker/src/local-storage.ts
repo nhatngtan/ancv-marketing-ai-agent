@@ -82,7 +82,7 @@ export async function persistLocalVideo(job: FlowJobRecord, temporaryPath: strin
   const batch = firestore.batch();
   batch.set(assetRef, asset);
   batch.update(firestore.collection('flowJobs').doc(job.id), {
-    status: 'succeeded', assetId: asset.id, storageType: 'local', relativePath,
+    status: 'succeeded', stage: 'completed', assetId: asset.id, storageType: 'local', relativePath,
     ...(job.executionMode === 'playwright_fallback'
       ? { executionEngine: 'playwright_fallback' as const }
       : {}),
