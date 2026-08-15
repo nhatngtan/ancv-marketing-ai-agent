@@ -26,4 +26,9 @@ describe('health endpoints', () => {
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ error: 'AUTOMATION_AUTH_REQUIRED' });
   });
+  it('protects Marketing reporting while allowing the dedicated user-role middleware to handle viewers', async () => {
+    const response = await request(createApp()).get('/v1/reports/marketing-dashboard?from=2026-08-01&to=2026-08-15');
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ error: 'AUTH_REQUIRED' });
+  });
 });

@@ -432,6 +432,100 @@ export interface HealthItem {
   detail?: string;
 }
 
+export interface MarketingPipelineItem {
+  id: string;
+  contentId: string;
+  title: string;
+  type: ContentType;
+  status: ContentStatus;
+  currentStep: string;
+  progress: number;
+  platforms: Array<{ platform: Platform; status: PublishingStatus }>;
+  updatedAt: string;
+}
+
+export interface YouTubePeriodMetrics {
+  from: string;
+  to: string;
+  views?: number;
+  watchMinutes?: number;
+  subscribersGained?: number;
+  likes?: number;
+  comments?: number;
+}
+
+export interface YouTubeContentMetric {
+  videoId: string;
+  contentDocId?: string;
+  contentId?: string;
+  title: string;
+  publishedAt?: string;
+  views: number;
+  watchMinutes: number;
+  likes: number;
+}
+
+export interface MarketingDashboardResponse {
+  generatedAt: string;
+  range: { from: string; to: string };
+  content: {
+    total: number;
+    inProgress: number;
+    awaitingApproval: number;
+    readyToPublish: number;
+    completed: number;
+  };
+  month: {
+    videos: number;
+    websiteArticles: number;
+    youtubePublished: number;
+    socialPublished: number;
+  };
+  pending: {
+    flowNeedsManual: number;
+    publishingErrors: number;
+    localAgentOffline: boolean;
+    awaitingApproval: number;
+  };
+  publishing: {
+    total: number;
+    byPlatform: Partial<Record<Platform, number>>;
+  };
+  pipeline: MarketingPipelineItem[];
+  youtube: {
+    status: 'connected' | 'unavailable';
+    auth: 'pass' | 'unavailable';
+    channelId?: string;
+    channelTitle?: string;
+    videoCount?: number;
+    range?: YouTubePeriodMetrics;
+    last7Days?: YouTubePeriodMetrics;
+    last28Days?: YouTubePeriodMetrics;
+    topVideos: YouTubeContentMetric[];
+    message?: string;
+  };
+  analytics: {
+    ga4: { status: 'connected' | 'not_connected'; label: string };
+    searchConsole: { status: 'connected' | 'not_connected'; label: string };
+  };
+  health: Array<{
+    key: 'ai' | 'flow' | 'local_agent' | 'youtube' | 'wordpress' | 'ga4' | 'search_console';
+    label: string;
+    status: 'operational' | 'partial' | 'offline' | 'not_connected' | 'manual';
+    detail: string;
+  }>;
+  report: {
+    completedVideos: number;
+    completedArticles: number;
+    publishedPosts: number;
+    pendingContents: number;
+    youtubeViews?: number;
+    youtubeWatchMinutes?: number;
+    availableSources: string[];
+    missingSources: string[];
+  };
+}
+
 export const connectorStatusVi: Record<ConnectorStatus, string> = {
   not_tested: 'Chưa kiểm tra', testing: 'Đang kiểm tra', available: 'Khả dụng',
   partially_available: 'Khả dụng một phần', manual_only: 'Chỉ thủ công',

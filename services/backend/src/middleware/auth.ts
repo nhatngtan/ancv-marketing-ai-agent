@@ -17,6 +17,20 @@ export async function requireFirebaseEditor(request: Request, response: Response
   } catch { response.status(401).json({ error: 'INVALID_TOKEN' }); }
 }
 
+export async function requireFirebaseUser(request: Request, response: Response, next: NextFunction) {
+  try {
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (!token) { response.status(401).json({ error: 'AUTH_REQUIRED' }); return; }
+    const identity = await firebaseAuth().verifyIdToken(token, true);
+    const user = await db().collection('users').doc(identity.uid).get();
+    if (!user.exists || user.data()?.status !== 'active' || !['admin', 'editor', 'viewer'].includes(user.data()?.role)) {
+      response.status(403).json({ error: 'USER_REQUIRED' }); return;
+    }
+    response.locals.identity = { uid: identity.uid, email: identity.email ?? null, role: user.data()?.role };
+    next();
+  } catch { response.status(401).json({ error: 'INVALID_TOKEN' }); }
+}
+
 export async function requireFirebaseAdmin(request: Request, response: Response, next: NextFunction) {
   await requireFirebaseEditor(request, response, () => {
     if (response.locals.identity?.role !== 'admin') { response.status(403).json({ error: 'ADMIN_REQUIRED' }); return; }

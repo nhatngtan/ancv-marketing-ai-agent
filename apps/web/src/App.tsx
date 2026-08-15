@@ -13,13 +13,14 @@ import { EmptyState } from './components/EmptyState';
 import { StatCard } from './components/StatCard';
 import { ContentStudioPage } from './components/ContentStudio';
 import { CompanySettings } from './components/CompanySettings';
+import { MarketingDashboard, MarketingReportPage } from './components/MarketingDashboard';
 import ancvLogo from './assets/brand/ancv-logo.png';
 import ancvIcon from './assets/brand/ancv-icon.png';
 import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
 import { auth, logout } from './lib/firebase';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { DEFAULT_CONNECTORS } from '@ancv/shared';
-import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, subscribeLocalAgents, subscribeMonthlyAIUsage, testConnector, updateContent } from './lib/repository';
+import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, subscribeLocalAgents, testConnector, updateContent } from './lib/repository';
 
 type PageKey = 'overview' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
 const nav: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
@@ -73,7 +74,6 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
-  const [aiUsage, setAIUsage] = useState({ requests: 0, totalTokens: 0, images: 0 });
   const [localAgents, setLocalAgents] = useState<LocalAgentRecord[]>([]);
 
   useEffect(() => {
@@ -84,7 +84,6 @@ export default function App() {
     if (firebaseConfigured && !user) return;
     return subscribeContents(setContents);
   }, [user]);
-  useEffect(() => { if (firebaseConfigured && !user) return; return subscribeMonthlyAIUsage(setAIUsage); }, [user]);
   useEffect(() => { if (firebaseConfigured && !user) return; return subscribeLocalAgents(setLocalAgents); }, [user]);
   useEffect(() => {
     if (firebaseConfigured && !user) return;
@@ -113,13 +112,14 @@ export default function App() {
       </header>
       <section className="workspace">
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
-        {firebaseConfigured && authReady && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
-          {page === 'overview' && <Overview contents={contents} connectors={connectors} aiUsage={aiUsage} onNavigate={openPage} />}
+        {firebaseConfigured && !authReady ? <section className="signin-panel"><span className="eyebrow">ĐANG XÁC MINH</span><h1>Đang tải phiên làm việc…</h1><p>Hệ thống đang kiểm tra quyền truy cập an toàn.</p></section> : firebaseConfigured && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
+          {page === 'overview' && <MarketingDashboard contents={contents}/>}
           {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} localAgents={localAgents} openContentId={openContentId} onOpened={() => setOpenContentId(null)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
           {page === 'health' && <HealthPage connectors={connectors} localAgents={localAgents}/>}
           {page === 'settings' && <CompanySettings onToast={setToast}/>}
-          {['schedule','social','website','seo','reports'].includes(page) && <PlaceholderPage page={page} contents={contents} connectors={connectors}/>}
+          {page === 'reports' && <MarketingReportPage/>}
+          {['schedule','social','website','seo'].includes(page) && <PlaceholderPage page={page} contents={contents} connectors={connectors}/>}
         </>}
       </section>
     </main>
@@ -142,7 +142,8 @@ function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
   return <section className="signin-panel"><img className="signin-logo" src={ancvLogo} alt="An Ninh Cảnh Vệ - Security Expert"/><span className="eyebrow">QUẢN TRỊ MARKETING AI AGENT</span><h1>Đăng nhập Marketing AI OS</h1><p>An Ninh Cảnh Vệ · Khu vực làm việc dành cho tài khoản đã được cấp quyền.</p><button className="primary" onClick={onLogin}><LogIn size={18}/>Tiếp tục với Google</button><small>Vai trò được quản lý bằng Firebase Authentication và Firestore.</small></section>;
 }
 
-function Overview({ contents, connectors, aiUsage, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; aiUsage: { requests: number; totalTokens: number; images: number }; onNavigate: (page: PageKey) => void }) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyOverview({ contents, connectors, aiUsage, onNavigate }: { contents: ContentRecord[]; connectors: ConnectorRecord[]; aiUsage: { requests: number; totalTokens: number; images: number }; onNavigate: (page: PageKey) => void }) {
   const published = contents.filter((item) => item.status === 'published' || item.status === 'partially_published').length;
   const actionCount = contents.flatMap((item) => item.platforms ?? []).filter((item) => item.status === 'needs_action' || item.status === 'manual_pending').length;
   const analyticsSources = [

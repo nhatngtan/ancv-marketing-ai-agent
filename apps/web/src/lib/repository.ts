@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord, type WordPressDraftJobRecord, type WordPressDraftState } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MarketingDashboardResponse, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord, type WordPressDraftJobRecord, type WordPressDraftState } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
@@ -243,3 +243,6 @@ export async function downloadSceneList(contentId: string) { const backendUrl = 
 
 export async function testConnector(platform: 'ga4' | 'search_console' | 'website', url?: string) { return api<{status:string}>('/connectors/test', { method: 'POST', body: JSON.stringify(platform === 'website' ? { platform, url } : { platform }) }); }
 export async function fetchBackendHealth() { const backendUrl = import.meta.env.VITE_BACKEND_URL; if (!backendUrl) return null; const response = await fetch(`${backendUrl}/health`); if (!response.ok) throw new Error('Backend health request failed.'); return response.json() as Promise<{ status: string; checkedAt: string; dependencies: Record<string, string> }>; }
+export async function fetchMarketingDashboard(from: string, to: string) {
+  return api<MarketingDashboardResponse>(`/v1/reports/marketing-dashboard?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+}

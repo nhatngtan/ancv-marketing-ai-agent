@@ -11,6 +11,7 @@ import { publishingRouter } from './modules/publishing-service.js';
 import { schedulerRouter } from './modules/scheduler-service.js';
 import { aiRouter } from './modules/ai-service.js';
 import { flowRouter } from './modules/flow-service.js';
+import { reportingRouter } from './modules/reporting-service.js';
 import OpenAI from 'openai';
 import { OpenAIConfigurationError, openAIProvider } from './services/openai-provider.js';
 import { db } from './firebase.js';
@@ -61,6 +62,7 @@ export function createApp() {
   app.use('/v1/scheduler', schedulerRouter);
   app.use('/v1/ai', aiRouter);
   app.use('/v1/flow', flowRouter);
+  app.use('/v1/reports', reportingRouter);
 
   const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
     const validation = error instanceof ZodError;
