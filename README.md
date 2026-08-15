@@ -85,3 +85,7 @@ Google Flow Worker Experimental V1, cách đăng nhập Chrome thật và kết 
 ANCV Local Agent local-first và Browser Bridge: [docs/LOCAL_AGENT.md](docs/LOCAL_AGENT.md), [docs/BROWSER_BRIDGE.md](docs/BROWSER_BRIDGE.md).
 
 Chrome Profile Selector và social preflight chỉ đọc: [docs/SOCIAL_BROWSER_AGENT.md](docs/SOCIAL_BROWSER_AGENT.md).
+
+Video Final local-first, AI Copy 5 nền tảng và YouTube private: [docs/VIDEO_COMPLETION_PUBLISHING_V1.md](docs/VIDEO_COMPLETION_PUBLISHING_V1.md).
+
+UAT production của luồng hoàn tất và đăng Video V1: [docs/UAT_VIDEO_COMPLETION_PUBLISHING_V1.md](docs/UAT_VIDEO_COMPLETION_PUBLISHING_V1.md).

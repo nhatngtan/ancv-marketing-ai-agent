@@ -21,6 +21,12 @@ const copyResponseSchema = z.object({ title: z.string().max(300), text: z.string
 const articleResponseSchema = z.object({ title: z.string().min(1).max(300), body: z.string().min(1).max(80_000) }).strict();
 const promptResponseSchema = z.object({ generationPrompt: z.string().min(1).max(8_000) }).strict();
 
+export function validatePlatformCopy(platform: Platform, value: { title: string; text: string }): { title: string; text: string } {
+  const parsed = copyResponseSchema.parse(value);
+  if (platform === 'tiktok' && parsed.text.split(/[.!?]+/).filter(Boolean).length > 1) throw new Error('OPENAI_TIKTOK_ONE_SENTENCE_REQUIRED');
+  return parsed;
+}
+
 export type SceneDraft = z.infer<typeof sceneDraftSchema>;
 export interface AIResult<T> { data: T; model: string; requestId: string | null; usage: AIUsageTokens }
 export type OpenAIImageResult = AIResult<{ base64: string; mimeType: 'image/png'; size: ImageSize; quality: ImageQuality }>;
@@ -115,8 +121,7 @@ export class OpenAIProvider {
       max_output_tokens: 4_000, store: false,
       text: { format: { type: 'json_schema', name: 'ancv_platform_copy', strict: true, schema: copyJsonSchema } },
     });
-    const parsed = copyResponseSchema.parse(JSON.parse(response.output_text));
-    if (input.platform === 'tiktok' && parsed.text.split(/[.!?]+/).filter(Boolean).length > 1) throw new Error('OPENAI_TIKTOK_ONE_SENTENCE_REQUIRED');
+    const parsed = validatePlatformCopy(input.platform, JSON.parse(response.output_text));
     return { data: parsed, model: response.model, requestId: response._request_id ?? null, usage: usageOf(response) };
   }
 

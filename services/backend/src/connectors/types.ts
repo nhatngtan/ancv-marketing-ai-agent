@@ -15,6 +15,8 @@ export interface PublishInput {
   body: string;
   mediaUrls: string[];
   scheduledAt?: string;
+  stagingPath?: string;
+  privacyStatus?: 'private';
 }
 
 export interface PublishResult {
@@ -22,6 +24,8 @@ export interface PublishResult {
   retryable: boolean;
   platformPostId?: string;
   postUrl?: string;
+  channelId?: string;
+  privacyStatus?: 'private';
   errorCode?: string;
   message: string;
 }
@@ -51,4 +55,3 @@ export interface AnalyticsProvider {
   getCapabilities(): Promise<ProviderCapabilities>;
   collect(query: AnalyticsQuery): Promise<AnalyticsResult>;
 }
-

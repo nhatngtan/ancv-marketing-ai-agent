@@ -28,6 +28,15 @@ if ($wordpressUserVersion -and $wordpressPasswordVersion) {
 } else {
   Write-Warning 'WordPress credential secrets have no enabled versions; Website remains semi_automatic.'
 }
+$youtubeClientIdVersion = & $gcloud secrets versions list youtube-oauth-client-id --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
+$youtubeClientSecretVersion = & $gcloud secrets versions list youtube-oauth-client-secret --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
+$youtubeRefreshTokenVersion = & $gcloud secrets versions list youtube-refresh-token --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
+if ($youtubeClientIdVersion -and $youtubeClientSecretVersion -and $youtubeRefreshTokenVersion) {
+  & $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --update-secrets='YOUTUBE_OAUTH_CLIENT_ID=youtube-oauth-client-id:latest,YOUTUBE_OAUTH_CLIENT_SECRET=youtube-oauth-client-secret:latest,YOUTUBE_REFRESH_TOKEN=youtube-refresh-token:latest' --quiet
+  if ($LASTEXITCODE -ne 0) { throw 'YouTube Secret Manager binding failed.' }
+} else {
+  Write-Warning 'YouTube OAuth secrets have no enabled versions; YouTube remains semi_automatic/manual.'
+}
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud workflows deploy ancv-health-check --source=infra/workflows/health-check.yaml --location=$Region --service-account="ancv-workflows@$ProjectId.iam.gserviceaccount.com" --project=$ProjectId

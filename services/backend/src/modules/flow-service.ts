@@ -24,6 +24,9 @@ const openVideoFolderSchema = z.object({
   contentDocId: z.string().min(1).max(200),
   agentId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/).default('ancv-windows-01'),
 });
+const registerVideoFinalSchema = openVideoFolderSchema.extend({
+  relativePath: z.string().min(1).max(1_000),
+});
 const chromeProfileIdSchema = z.string().regex(/^(?:Default|Profile(?: \d+)?)$/);
 const browserMappingSchema = z.object({
   google_flow: chromeProfileIdSchema.optional(), facebook: chromeProfileIdSchema.optional(),
@@ -218,7 +221,57 @@ flowRouter.post('/local-commands/open-video-folder', requireFirebaseEditor, asyn
     const contentId = String(content.data()?.contentId ?? '');
     if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId)) throw Object.assign(new Error('LOCAL_FOLDER_METADATA_INVALID'), { statusCode: 409 });
     const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
-    const command = { id: ref.id, agentId: input.agentId, command: 'open_folder' as const, relativePath: `Projects/${contentId}/Video Raw`, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
+    const command = { id: ref.id, agentId: input.agentId, command: 'open_folder' as const, relativePath: `Projects/${contentId}`, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
     await ref.set(command); response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/local-commands/scan-video-final', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = openVideoFolderSchema.parse(request.body);
+    if (!await localAgentOnline(input.agentId)) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
+    const content = await db().collection('contents').doc(input.contentDocId).get();
+    if (!content.exists || content.data()?.type !== 'video') throw Object.assign(new Error('VIDEO_CONTENT_NOT_FOUND'), { statusCode: 404 });
+    const contentId = String(content.data()?.contentId ?? '');
+    if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId)) throw Object.assign(new Error('LOCAL_FOLDER_METADATA_INVALID'), { statusCode: 409 });
+    const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
+    const command = {
+      id: ref.id, agentId: input.agentId, command: 'scan_video_final' as const,
+      contentDocId: input.contentDocId, contentId, relativePath: `Projects/${contentId}/Video Final`,
+      status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid,
+    };
+    await ref.set(command); response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/local-commands/register-video-final', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = registerVideoFinalSchema.parse(request.body);
+    if (!await localAgentOnline(input.agentId)) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
+    const content = await db().collection('contents').doc(input.contentDocId).get();
+    if (!content.exists || content.data()?.type !== 'video') throw Object.assign(new Error('VIDEO_CONTENT_NOT_FOUND'), { statusCode: 404 });
+    const contentId = String(content.data()?.contentId ?? '');
+    const normalized = input.relativePath.replaceAll('\\', '/').replace(/^\/+/, '');
+    const prefix = `Projects/${contentId}/Video Final/`;
+    const fileName = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : '';
+    if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId) || !fileName || fileName.includes('/') || !/\.(?:mp4|mov|m4v|webm)$/i.test(fileName)) {
+      throw Object.assign(new Error('LOCAL_FINAL_PATH_INVALID'), { statusCode: 409 });
+    }
+    const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
+    const command = {
+      id: ref.id, agentId: input.agentId, command: 'register_video_final' as const,
+      contentDocId: input.contentDocId, contentId, relativePath: normalized,
+      status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid,
+    };
+    await ref.set(command); response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.get('/local-commands/:commandId', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const commandId = z.string().regex(/^[A-Za-z0-9_-]{1,200}$/).parse(request.params.commandId);
+    const snapshot = await db().collection('localCommands').doc(commandId).get();
+    if (!snapshot.exists) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+    response.json({ command: snapshot.data() });
   } catch (error) { next(error); }
 });

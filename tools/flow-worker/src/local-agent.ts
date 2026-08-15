@@ -10,7 +10,7 @@ import type {
   FlowJobRecord,
   LocalCommandRecord,
 } from "@ancv/shared";
-import { firestore } from "./firebase.js";
+import { firestore, storageBucket } from "./firebase.js";
 import {
   ensureLocalDirectories,
   loadLocalAgentConfig,
@@ -21,6 +21,11 @@ import { ChromeProfileManager } from "./profile-manager.js";
 import { processPlaywrightJob } from "./worker.js";
 import { assertFlowRuntimeSnapshot } from "./flow-runtime.js";
 import { scanChromeProfiles } from "./chrome-profile-scanner.js";
+import {
+  inspectLocalFinalCandidate,
+  registerLocalFinalVideo,
+  scanLocalFinalCandidates,
+} from "./local-storage.js";
 
 interface FlowInspection {
   url: string;
@@ -498,6 +503,85 @@ export class LocalAgent {
         return;
       }
 
+      if (command.command === "scan_video_final") {
+        if (!command.contentId) throw new Error("LOCAL_FINAL_CONTENT_REQUIRED");
+        const candidates = await scanLocalFinalCandidates(command.contentId);
+        const now = new Date().toISOString();
+        await ref.update({
+          status: "succeeded",
+          completedAt: now,
+          updatedAt: now,
+          error: null,
+          result: { candidates },
+        });
+        return;
+      }
+
+      if (command.command === "register_video_final") {
+        if (!command.contentDocId || !command.contentId || !command.relativePath)
+          throw new Error("LOCAL_FINAL_REGISTER_INPUT_REQUIRED");
+        const asset = await registerLocalFinalVideo({
+          contentDocId: command.contentDocId,
+          contentId: command.contentId,
+          relativePath: command.relativePath,
+          createdBy: `local-agent:${this.config.agentId}`,
+        });
+        const now = new Date().toISOString();
+        await ref.update({
+          status: "succeeded",
+          completedAt: now,
+          updatedAt: now,
+          error: null,
+          result: { asset },
+        });
+        return;
+      }
+
+      if (command.command === "stage_youtube_final") {
+        if (!command.contentId || !command.relativePath || !command.publishingJobId || !command.stagingPath)
+          throw new Error("YOUTUBE_STAGING_INPUT_REQUIRED");
+        const jobRef = firestore.collection("publishingJobs").doc(command.publishingJobId);
+        const job = await jobRef.get();
+        if (!job.exists || job.data()?.status !== "staging") throw new Error("YOUTUBE_STAGING_JOB_NOT_READY");
+        const candidate = await inspectLocalFinalCandidate(command.contentId, command.relativePath);
+        const source = pathInsideWorkspace(this.config, candidate.relativePath);
+        await storageBucket.upload(source, {
+          destination: command.stagingPath,
+          resumable: true,
+          metadata: {
+            contentType: candidate.contentType,
+            metadata: {
+              publishingJobId: command.publishingJobId,
+              contentId: command.contentId,
+              temporary: "true",
+            },
+          },
+        });
+        const now = new Date().toISOString();
+        const batch = firestore.batch();
+        batch.update(jobRef, {
+          status: "staged",
+          stagingPath: command.stagingPath,
+          stagingSizeBytes: candidate.sizeBytes,
+          stagingChecksumSha256: candidate.checksumSha256,
+          stagingCleanup: "pending",
+          updatedAt: now,
+        });
+        batch.update(ref, {
+          status: "succeeded",
+          completedAt: now,
+          updatedAt: now,
+          error: null,
+          result: {
+            stagingPath: command.stagingPath,
+            sizeBytes: candidate.sizeBytes,
+            checksumSha256: candidate.checksumSha256,
+          },
+        });
+        await batch.commit();
+        return;
+      }
+
       if (!command.relativePath) throw new Error("LOCAL_PATH_REQUIRED");
       const target = pathInsideWorkspace(this.config, command.relativePath);
       if (command.command === "open_folder")
@@ -519,6 +603,13 @@ export class LocalAgent {
       });
     } catch (error) {
       const now = new Date().toISOString();
+      if (command.publishingJobId) {
+        await firestore.collection("publishingJobs").doc(command.publishingJobId).set({
+          status: "needs_manual",
+          error: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+          updatedAt: now,
+        }, { merge: true }).catch(() => undefined);
+      }
       if (command.command === "validate_profile" && command.platform) {
         const message = error instanceof Error ? error.message : String(error);
         const profileStatus: BrowserProfileStatus = /BRIDGE/.test(message) ? "bridge_required" : "unavailable";

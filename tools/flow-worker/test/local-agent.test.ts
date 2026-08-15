@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowAccountRecord, FlowJobRecord } from '@ancv/shared';
-import { localVideoRelativePath } from '../src/local-storage.js';
+import { assertLocalFinalRelativePath, buildLocalFinalAsset, localFinalFolderRelativePath, localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
 import { downloadReadinessFailure, findNewCompletedDownloads, flowJobTempRelativePath, runDownloadReadinessStateMachine } from '../src/worker.js';
@@ -22,6 +22,24 @@ describe('local-first paths', () => {
 
   it('rejects traversal outside the workspace', () => {
     expect(() => pathInsideWorkspace(config, '../secret.txt')).toThrow('LOCAL_PATH_INVALID');
+  });
+
+  it('registers Final as relative local metadata without a Storage object', () => {
+    const relativePath = `${localFinalFolderRelativePath('ANCV-VID-2026-004')}/final.mp4`;
+    expect(assertLocalFinalRelativePath('ANCV-VID-2026-004', relativePath)).toBe(relativePath);
+    const asset = buildLocalFinalAsset({
+      contentDocId: 'content-1', contentId: 'ANCV-VID-2026-004', createdBy: 'local-agent', now: '2026-08-15T00:00:00.000Z',
+      candidate: { relativePath, fileName: 'final.mp4', sizeBytes: 2048, contentType: 'video/mp4', checksumSha256: 'a'.repeat(64) },
+    });
+    expect(asset).toMatchObject({ storageType: 'local', relativePath, source: 'manual_local', selected: true });
+    expect(asset.storagePath).toBeUndefined();
+    expect(asset.downloadUrl).toBeUndefined();
+    expect(JSON.stringify(asset)).not.toContain('D:\\');
+  });
+
+  it('rejects an absolute or nested Final path', () => {
+    expect(() => assertLocalFinalRelativePath('ANCV-VID-2026-004', 'D:/Final/final.mp4')).toThrow('LOCAL_FINAL_PATH_INVALID');
+    expect(() => assertLocalFinalRelativePath('ANCV-VID-2026-004', 'Projects/ANCV-VID-2026-004/Video Final/sub/final.mp4')).toThrow('LOCAL_FINAL_PATH_INVALID');
   });
 });
 

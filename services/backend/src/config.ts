@@ -10,6 +10,10 @@ export const config = {
   wordpressBaseUrl: process.env.WORDPRESS_BASE_URL ?? '',
   wordpressUsername: process.env.WORDPRESS_USERNAME ?? '',
   wordpressApplicationPassword: process.env.WORDPRESS_APPLICATION_PASSWORD ?? '',
+  youtubeOAuthClientId: process.env.YOUTUBE_OAUTH_CLIENT_ID ?? '',
+  youtubeOAuthClientSecret: process.env.YOUTUBE_OAUTH_CLIENT_SECRET ?? '',
+  youtubeRefreshToken: process.env.YOUTUBE_REFRESH_TOKEN ?? '',
+  youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID ?? 'UCy-H7__UvdWcTbUax3RGDcA',
   aiRateLimitPerTenMinutes: Number(process.env.AI_RATE_LIMIT_PER_10_MINUTES ?? 20),
 };
 

@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type MediaAssetRecord, type Platform, type PlatformCopy, type Role, type SceneRecord } from '@ancv/shared';
+import { DEFAULT_CONNECTORS, type AIUsageRecord, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
@@ -122,14 +122,73 @@ export async function regeneratePrompt(contentId: string, sceneId: string) { ret
 export async function createFlowJob(contentDocId: string, sceneId: string, flowAccountId: string, current: { generationPrompt: string; durationEstimate: number; aspectRatio: '9:16' | '16:9' }) { return trackedApi<{job:FlowJobRecord}>('create_flow_job', '/v1/flow/jobs', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, flowAccountId, ...current }) }, { contentId: contentDocId, sceneId }); }
 export async function openSceneFolder(contentDocId: string, sceneId: string) { return api('/v1/flow/local-commands/open-scene-folder', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, agentId: 'ancv-windows-01' }) }); }
 export async function openVideoFolder(contentDocId: string) { return api('/v1/flow/local-commands/open-video-folder', { method: 'POST', body: JSON.stringify({ contentDocId, agentId: 'ancv-windows-01' }) }); }
+export async function waitLocalCommand(commandId: string, timeoutMs = 120_000): Promise<LocalCommandRecord> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { command } = await api<{command:LocalCommandRecord}>(`/v1/flow/local-commands/${commandId}`);
+    if (command.status === 'succeeded') return command;
+    if (command.status === 'needs_manual') throw new Error(command.error || 'Local Agent không thể hoàn tất yêu cầu.');
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+  throw new Error('Local Agent chưa phản hồi trong thời gian chờ.');
+}
+export async function scanVideoFinal(contentDocId: string): Promise<LocalFinalCandidate[]> {
+  const { command } = await api<{command:LocalCommandRecord}>('/v1/flow/local-commands/scan-video-final', { method: 'POST', body: JSON.stringify({ contentDocId, agentId: 'ancv-windows-01' }) });
+  const completed = await waitLocalCommand(command.id);
+  return (completed.result?.candidates ?? []) as LocalFinalCandidate[];
+}
+export async function registerVideoFinal(contentDocId: string, relativePath: string): Promise<MediaAssetRecord> {
+  const { command } = await api<{command:LocalCommandRecord}>('/v1/flow/local-commands/register-video-final', { method: 'POST', body: JSON.stringify({ contentDocId, relativePath, agentId: 'ancv-windows-01' }) });
+  const completed = await waitLocalCommand(command.id);
+  return completed.result?.asset as MediaAssetRecord;
+}
 export async function generateArticle(contentId: string, replaceExisting = false) { return api<{article:{title:string;body:string}}>(`/v1/ai/content/${contentId}/article`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
 export async function generatePlatformCopy(contentId: string, platform: Platform, replaceExisting = false) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), replaceExisting }) }, 120_000); }
+export async function generateVideoPlatformCopies(
+  content: ContentRecord,
+  generate: (contentId: string, platform: Platform, replaceExisting: boolean) => Promise<unknown> = generatePlatformCopy,
+): Promise<{ succeeded: Platform[]; failed: Array<{platform:Platform;message:string}> }> {
+  const platforms: Platform[] = ['tiktok', 'youtube', 'facebook', 'zalo', 'linkedin'];
+  const succeeded: Platform[] = [];
+  const failed: Array<{platform:Platform;message:string}> = [];
+  for (const platform of platforms) {
+    if (content.platformCopies?.[platform]) { succeeded.push(platform); continue; }
+    try { await generate(content.id, platform, false); succeeded.push(platform); }
+    catch (error) { failed.push({ platform, message: error instanceof Error ? error.message : 'Không thể tạo nội dung.' }); }
+  }
+  return { succeeded, failed };
+}
 export async function approvePlatformCopy(contentId: string, platform: Platform) { return api<{copy:PlatformCopy}>(`/v1/ai/content/${contentId}/platform-copy/${platform}/approve`, { method: 'POST', body: '{}' }); }
 export async function generateArticleImage(contentId: string, prompt: string, size = '1024x1024', quality = 'low') { return api<{asset:MediaAssetRecord}>(`/v1/ai/content/${contentId}/images`, { method: 'POST', body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), prompt, size, quality }) }, 180_000); }
 export async function approveContent(contentId: string) { return api(`/v1/content/${contentId}/approve`, { method: 'POST', body: '{}' }); }
 export async function markReady(contentId: string) { return api(`/v1/content/${contentId}/ready`, { method: 'POST', body: '{}' }); }
 export async function setContentStatus(contentId: string, status: string) { return api(`/v1/content/${contentId}/status`, { method: 'POST', body: JSON.stringify({ status }) }); }
-export async function markManualPublished(contentId: string, platform: Platform, postUrl: string, note?: string) { return api(`/v1/content/${contentId}/manual-publish`, { method: 'POST', body: JSON.stringify({ platform, postUrl, note }) }); }
+export async function markManualPublished(contentId: string, platform: Platform, postUrl?: string, note?: string) { return api(`/v1/content/${contentId}/manual-publish`, { method: 'POST', body: JSON.stringify({ platform, ...(postUrl ? { postUrl } : {}), note }) }); }
+export async function getYouTubePublishingJob(jobId: string) { return api<{job:PublishingJobRecord}>(`/v1/publishing/youtube/jobs/${jobId}`); }
+export async function publishYouTubePrivate(contentId: string): Promise<PublishingJobRecord> {
+  const started = await api<{job:PublishingJobRecord}> (`/v1/publishing/youtube/${contentId}/private`, { method: 'POST', body: JSON.stringify({ confirmPrivate: true, idempotencyKey: crypto.randomUUID() }) });
+  let job = started.job;
+  const stagingDeadline = Date.now() + 30 * 60_000;
+  while (job.status === 'staging' && Date.now() < stagingDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    job = (await getYouTubePublishingJob(job.id)).job;
+  }
+  if (job.status === 'succeeded') return job;
+  if (job.status === 'needs_manual') throw new Error(job.error || 'YouTube job cần xử lý thủ công.');
+  if (job.status === 'uploading') {
+    const uploadDeadline = Date.now() + 35 * 60_000;
+    while (job.status === 'uploading' && Date.now() < uploadDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      job = (await getYouTubePublishingJob(job.id)).job;
+    }
+    if (job.status === 'succeeded') return job;
+    throw new Error(job.error || 'YouTube upload chưa có kết quả chắc chắn; hệ thống không retry.');
+  }
+  if (job.status !== 'staged') throw new Error('Video Final chưa staging xong; hệ thống không retry.');
+  const executed = await api<{job:PublishingJobRecord}>(`/v1/publishing/youtube/jobs/${job.id}/execute`, { method: 'POST', body: '{}' }, 35 * 60_000);
+  if (executed.job.status !== 'succeeded') throw new Error(executed.job.error || 'YouTube upload cần xử lý thủ công.');
+  return executed.job;
+}
 export async function savePlatformCopy(contentId: string, platform: Platform, copy: PlatformCopy) { if (!firestore) return; await updateDoc(doc(firestore, 'contents', contentId), { [`platformCopies.${platform}`]: { ...copy, editedAt: new Date().toISOString() }, updatedAt: serverTimestamp() }); }
 
 export async function uploadMedia(content: ContentRecord, file: File, kind: 'scene_take' | 'video_final', sceneId?: string, takeNumber = 1): Promise<MediaAssetRecord> {

@@ -79,8 +79,8 @@ export function createApp() {
     const status = validation ? 400 : jobConflict ? 409 : configuration ? 503 : upstream && error.status === 429 ? 503 : upstream ? 502 : explicitStatus || 500;
     request.log.error({ event: 'request_failed', errorType: error instanceof Error ? error.name : 'Unknown', upstreamStatus: upstream ? error.status : undefined, upstreamRequestId: upstream ? error.requestID : undefined });
     response.status(status).json({
-      error: validation ? 'VALIDATION_ERROR' : jobConflict ? error.message : flowError ? error.message : configuration ? 'CONFIGURATION_REQUIRED' : upstream ? 'OPENAI_UPSTREAM_ERROR' : explicitStatus === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR',
-      message: validation ? error.issues.map((issue) => issue.message).join('; ') : jobConflict ? 'Tác vụ trùng đang chạy hoặc đã thất bại; hãy dùng request ID mới để thử lại.' : flowError ? (flowMessage ?? 'Flow Worker chưa sẵn sàng cho scene này. Kiểm tra account, project và job hiện tại.') : configuration ? 'OpenAI chưa được cấu hình.' : upstream ? 'OpenAI tạm thời không khả dụng; lỗi đã được ghi log.' : 'Đã ghi nhận lỗi hệ thống.',
+      error: validation ? 'VALIDATION_ERROR' : jobConflict ? error.message : flowError ? error.message : configuration ? 'CONFIGURATION_REQUIRED' : upstream ? 'OPENAI_UPSTREAM_ERROR' : explicitStatus && error instanceof Error ? error.message : 'INTERNAL_ERROR',
+      message: validation ? error.issues.map((issue) => issue.message).join('; ') : jobConflict ? 'Tác vụ trùng đang chạy hoặc đã thất bại; hãy dùng request ID mới để thử lại.' : flowError ? (flowMessage ?? 'Flow Worker chưa sẵn sàng cho scene này. Kiểm tra account, project và job hiện tại.') : configuration ? 'OpenAI chưa được cấu hình.' : upstream ? 'OpenAI tạm thời không khả dụng; lỗi đã được ghi log.' : explicitStatus && error instanceof Error ? error.message : 'Đã ghi nhận lỗi hệ thống.',
     });
   };
   app.use(errorHandler);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OPENAI_MAX_RETRIES, OpenAIConfigurationError, OpenAIProvider, scenesResponseSchema } from '../src/services/openai-provider.js';
+import { OPENAI_MAX_RETRIES, OpenAIConfigurationError, OpenAIProvider, scenesResponseSchema, validatePlatformCopy } from '../src/services/openai-provider.js';
 
 const profile = { companyName:'', brandName:'', website:'', introduction:'', services:'', serviceAreas:'', contact:'', toneOfVoice:'', defaultCta:'', approvedFacts:'' };
 
@@ -17,6 +17,10 @@ describe('OpenAI provider', () => {
     expect(scenesResponseSchema.parse({ scenes: [{ sceneNumber:1,title:'Mở đầu',durationEstimate:5,narration:'Lời dẫn',visualDescription:'Cổng doanh nghiệp',cameraDirection:'Wide shot',environment:'Ban ngày',characters:[],continuityNotes:'Giữ ánh sáng',generationPrompt:'Cinematic wide shot',status:'draft' }] }).scenes).toHaveLength(1);
   });
   it('limits SDK retries to protect cost', () => expect(OPENAI_MAX_RETRIES).toBe(1));
+  it('enforces exactly one TikTok sentence', () => {
+    expect(validatePlatformCopy('tiktok', { title: '', text: 'Một câu ngắn.' }).text).toBe('Một câu ngắn.');
+    expect(() => validatePlatformCopy('tiktok', { title: '', text: 'Câu một. Câu hai.' })).toThrow('OPENAI_TIKTOK_ONE_SENTENCE_REQUIRED');
+  });
   it('can initialize with a configured key without startup ordering errors', () => {
     process.env.OPENAI_API_KEY = 'test-key-not-used';
     expect(() => new OpenAIProvider()).not.toThrow();

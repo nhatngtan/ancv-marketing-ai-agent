@@ -1,10 +1,12 @@
 import { PLATFORMS, type Platform } from '@ancv/shared';
 import { ManualPublishingProvider } from './manual-provider.js';
 import type { PublishingProvider } from './types.js';
+import { YouTubePublishingProvider } from './youtube-provider.js';
 
 const providers = new Map<Platform, PublishingProvider>(
   PLATFORMS.map((platform) => [platform, new ManualPublishingProvider(platform)]),
 );
+providers.set('youtube', new YouTubePublishingProvider());
 
 export function getPublishingProvider(platform: Platform): PublishingProvider {
   const provider = providers.get(platform);
@@ -19,4 +21,3 @@ export function registerPublishingProvider(provider: PublishingProvider): void {
 export function listPublishingProviders(): PublishingProvider[] {
   return [...providers.values()];
 }
-

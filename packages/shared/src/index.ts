@@ -172,13 +172,40 @@ export interface MediaAssetRecord extends AuditFields {
   model?: string;
   quality?: string;
   usage?: AIUsageTokens;
-  source?: 'manual_upload' | 'google_flow_worker' | 'google_flow' | 'openai';
+  source?: 'manual_upload' | 'manual_local' | 'google_flow_worker' | 'google_flow' | 'openai';
   flowAccountId?: string;
   flowJobId?: string;
   executionEngine?: 'playwright_fallback';
   outputId?: string;
   fileSize?: number;
   mimeType?: string;
+  checksumSha256?: string;
+}
+
+export interface LocalFinalCandidate {
+  relativePath: string;
+  fileName: string;
+  sizeBytes: number;
+  contentType: string;
+  checksumSha256?: string;
+}
+
+export interface PublishingJobRecord extends AuditFields {
+  platform: 'youtube';
+  contentDocId: string;
+  contentId: string;
+  assetId: string;
+  idempotencyKey: string;
+  privacyStatus: 'private';
+  status: 'staging' | 'staged' | 'uploading' | 'succeeded' | 'needs_manual';
+  stagingPath?: string;
+  stagingCleanup?: 'pending' | 'completed' | 'failed';
+  uploadIntentAt?: string;
+  videoId?: string;
+  postUrl?: string;
+  channelId?: string;
+  error?: string | null;
+  completedAt?: string;
 }
 
 export interface FlowAccountRecord extends AuditFields {
@@ -247,8 +274,12 @@ export interface LocalAgentRecord extends AuditFields {
 export interface LocalCommandRecord extends AuditFields {
   status: 'queued' | 'processing' | 'succeeded' | 'needs_manual';
   agentId: string;
-  command: 'open_folder' | 'open_file' | 'scan_profiles' | 'validate_profile';
+  command: 'open_folder' | 'open_file' | 'scan_profiles' | 'validate_profile' | 'scan_video_final' | 'register_video_final' | 'stage_youtube_final';
   relativePath?: string;
+  contentDocId?: string;
+  contentId?: string;
+  publishingJobId?: string;
+  stagingPath?: string;
   platform?: BrowserPlatform;
   chromeProfileId?: string;
   result?: Record<string, unknown>;

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, mkdir, open, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, open, readdir, stat, unlink } from 'node:fs/promises';
 import { dirname, extname } from 'node:path';
-import type { FlowJobRecord, MediaAssetRecord } from '@ancv/shared';
+import type { FlowJobRecord, LocalFinalCandidate, MediaAssetRecord } from '@ancv/shared';
 import { firestore } from './firebase.js';
 import { loadLocalAgentConfig, pathInsideWorkspace } from './config.js';
 
@@ -10,6 +10,129 @@ async function sha256(filePath: string): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(filePath)) hash.update(chunk);
   return hash.digest('hex');
+}
+
+const finalContentTypes: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.webm': 'video/webm',
+};
+
+export function localFinalFolderRelativePath(contentId: string): string {
+  if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId)) throw new Error('LOCAL_FINAL_CONTENT_ID_INVALID');
+  return `Projects/${contentId}/Video Final`;
+}
+
+export function assertLocalFinalRelativePath(contentId: string, relativePath: string): string {
+  const normalized = relativePath.replaceAll('\\', '/').replace(/^\/+/, '');
+  const prefix = `${localFinalFolderRelativePath(contentId)}/`;
+  const fileName = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : '';
+  if (!fileName || fileName.includes('/') || fileName === '.' || fileName === '..') throw new Error('LOCAL_FINAL_PATH_INVALID');
+  if (!finalContentTypes[extname(fileName).toLowerCase()]) throw new Error('LOCAL_FINAL_FORMAT_UNSUPPORTED');
+  return normalized;
+}
+
+export async function inspectLocalFinalCandidate(contentId: string, relativePath: string): Promise<LocalFinalCandidate> {
+  const normalized = assertLocalFinalRelativePath(contentId, relativePath);
+  const config = loadLocalAgentConfig();
+  const filePath = pathInsideWorkspace(config, normalized);
+  const details = await stat(filePath);
+  if (!details.isFile() || details.size < 1_024) throw new Error('LOCAL_FINAL_FILE_INVALID');
+  const extension = extname(filePath).toLowerCase();
+  if (extension === '.mp4') {
+    const handle = await open(filePath, 'r');
+    try {
+      const header = Buffer.alloc(12);
+      await handle.read(header, 0, header.length, 0);
+      if (header.subarray(4, 8).toString('ascii') !== 'ftyp') throw new Error('LOCAL_FINAL_MP4_SIGNATURE_INVALID');
+    } finally {
+      await handle.close();
+    }
+  }
+  return {
+    relativePath: normalized,
+    fileName: normalized.split('/').at(-1) ?? 'video-final',
+    sizeBytes: details.size,
+    contentType: finalContentTypes[extension] ?? 'application/octet-stream',
+    checksumSha256: await sha256(filePath),
+  };
+}
+
+export async function scanLocalFinalCandidates(contentId: string): Promise<LocalFinalCandidate[]> {
+  const config = loadLocalAgentConfig();
+  const relativeFolder = localFinalFolderRelativePath(contentId);
+  const folder = pathInsideWorkspace(config, relativeFolder);
+  await mkdir(folder, { recursive: true });
+  const entries = await readdir(folder, { withFileTypes: true });
+  const candidates: LocalFinalCandidate[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isFile() || !finalContentTypes[extname(entry.name).toLowerCase()]) continue;
+    candidates.push(await inspectLocalFinalCandidate(contentId, `${relativeFolder}/${entry.name}`));
+  }
+  return candidates;
+}
+
+export function buildLocalFinalAsset(input: {
+  contentDocId: string;
+  contentId: string;
+  candidate: LocalFinalCandidate;
+  createdBy: string;
+  now: string;
+}): MediaAssetRecord {
+  const assetId = `final-${input.contentDocId}-${input.candidate.checksumSha256?.slice(0, 24)}`;
+  return {
+    id: assetId,
+    contentDocId: input.contentDocId,
+    contentId: input.contentId,
+    kind: 'video_final',
+    storageType: 'local',
+    relativePath: input.candidate.relativePath,
+    fileName: input.candidate.fileName,
+    contentType: input.candidate.contentType,
+    sizeBytes: input.candidate.sizeBytes,
+    checksumSha256: input.candidate.checksumSha256,
+    selected: true,
+    source: 'manual_local',
+    status: 'ready',
+    createdAt: input.now,
+    updatedAt: input.now,
+    createdBy: input.createdBy,
+  };
+}
+
+export async function registerLocalFinalVideo(input: {
+  contentDocId: string;
+  contentId: string;
+  relativePath: string;
+  createdBy: string;
+}): Promise<MediaAssetRecord> {
+  const candidate = await inspectLocalFinalCandidate(input.contentId, input.relativePath);
+  const assetId = `final-${input.contentDocId}-${candidate.checksumSha256?.slice(0, 24)}`;
+  const assetRef = firestore.collection('mediaAssets').doc(assetId);
+  const existing = await assetRef.get();
+  const now = new Date().toISOString();
+  const asset: MediaAssetRecord = existing.exists ? existing.data() as MediaAssetRecord : buildLocalFinalAsset({
+    contentDocId: input.contentDocId,
+    contentId: input.contentId,
+    candidate,
+    createdBy: input.createdBy,
+    now,
+  });
+  const finals = await firestore.collection('mediaAssets')
+    .where('contentDocId', '==', input.contentDocId)
+    .where('kind', '==', 'video_final')
+    .get();
+  const batch = firestore.batch();
+  finals.docs.filter((document) => document.id !== assetId).forEach((document) => batch.set(document.ref, { selected: false, updatedAt: now }, { merge: true }));
+  batch.set(assetRef, { ...asset, selected: true, updatedAt: now }, { merge: true });
+  batch.update(firestore.collection('contents').doc(input.contentDocId), {
+    finalVideoAssetId: assetId,
+    status: 'awaiting_copy',
+    updatedAt: now,
+  });
+  await batch.commit();
+  return { ...asset, selected: true, updatedAt: now };
 }
 
 export function localVideoRelativePath(job: FlowJobRecord, takeNumber: number, extension = '.mp4'): string {
