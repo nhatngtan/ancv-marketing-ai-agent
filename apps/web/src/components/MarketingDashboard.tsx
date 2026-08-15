@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle, BarChart3, CheckCircle2, Clock3, FileCheck2, FileText, RefreshCw,
-  ShieldCheck, Video, Youtube,
+  AlertTriangle, Archive, BarChart3, CheckCircle2, Clock3, FileCheck2, FileText, FolderOpen,
+  Plus, RefreshCw, Search, ShieldCheck, Video, Youtube,
 } from 'lucide-react';
-import type { ContentRecord, MarketingDashboardResponse, Platform } from '@ancv/shared';
+import type { ContentRecord, MarketingDashboardResponse, MarketingWorkFilter, MarketingWorkItem, Platform } from '@ancv/shared';
 import { Badge } from './Badge';
 import { StatCard } from './StatCard';
-import { fetchMarketingDashboard } from '../lib/repository';
+import { archiveContent, completeContent, fetchMarketingDashboard, openVideoFolder } from '../lib/repository';
 
 const platformLabel: Partial<Record<Platform, string>> = {
   youtube: 'YouTube', facebook: 'Facebook', tiktok: 'TikTok', linkedin: 'LinkedIn', zalo: 'Zalo', website: 'Website',
@@ -17,6 +17,7 @@ const statusLabel: Record<string, string> = {
   post_production: 'Chờ hậu kỳ', awaiting_copy: 'Chờ tạo mô tả', review: 'Chờ duyệt', approved: 'Đã duyệt',
   ready_to_publish: 'Sẵn sàng đăng', scheduled: 'Đã lên lịch', partially_published: 'Đã đăng một phần',
   published: 'Đã đăng', archived: 'Lưu trữ', test: 'Test',
+  completed: 'Hoàn tất',
 };
 
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -24,10 +25,12 @@ function monthStart() { const date = new Date(); return new Date(Date.UTC(date.g
 function formatNumber(value?: number) { return value === undefined ? 'Không khả dụng' : value.toLocaleString('vi-VN'); }
 function formatMinutes(value?: number) { return value === undefined ? 'Không khả dụng' : `${Math.round(value).toLocaleString('vi-VN')} phút`; }
 
-export function MarketingDashboard({ contents }: { contents: ContentRecord[] }) {
+export function MarketingDashboard({ contents, onCreateWork = () => undefined, onOpenContent = () => undefined, onToast = () => undefined }: { contents: ContentRecord[]; onCreateWork?: () => void; onOpenContent?: (content: ContentRecord) => void; onToast?: (message: string) => void }) {
   const [data, setData] = useState<MarketingDashboardResponse | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<MarketingWorkFilter>('all');
+  const [search, setSearch] = useState('');
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try { setData(await fetchMarketingDashboard(monthStart(), today())); }
@@ -44,25 +47,51 @@ export function MarketingDashboard({ contents }: { contents: ContentRecord[] }) 
   }, []);
 
   if (!data) return <DashboardFallback contents={contents} loading={loading} error={error} onRetry={load}/>;
+  const operations = data.operations ?? { work: [], today: [] };
+  const contentById = new Map(contents.map((content) => [content.id, content]));
+  const normalizedSearch = search.trim().toLocaleLowerCase('vi');
+  const work = operations.work.filter((item) => {
+    const content = contentById.get(item.id);
+    const matchesFilter = filter === 'all' || item.statusGroup === filter;
+    const haystack = `${item.contentId} ${item.title} ${content?.topic ?? ''}`.toLocaleLowerCase('vi');
+    return matchesFilter && (!normalizedSearch || haystack.includes(normalizedSearch));
+  });
+  const openItem = (contentId: string) => { const content = contentById.get(contentId); if (content) onOpenContent(content); };
+  const runQuickAction = async (item: MarketingWorkItem) => {
+    if (item.quickAction === 'open_video_folder') {
+      try { await openVideoFolder(item.id); onToast('Đã mở thư mục Video.'); }
+      catch { onToast('Không thể mở thư mục. Hãy kiểm tra Local Agent.'); }
+      return;
+    }
+    openItem(item.id);
+  };
+  const markComplete = async (item: MarketingWorkItem) => {
+    if (!window.confirm(`Xác nhận ${item.contentId} đã hoàn tất?`)) return;
+    try { await completeContent(item.id); onToast(`Đã đánh dấu hoàn tất ${item.contentId}.`); await load(); }
+    catch { onToast(`Không thể đánh dấu hoàn tất ${item.contentId}. Vui lòng thử lại.`); }
+  };
+  const archive = async (item: MarketingWorkItem) => {
+    try { await archiveContent(item.id); onToast(`Đã lưu trữ ${item.contentId}.`); await load(); }
+    catch { onToast(`Không thể lưu trữ ${item.contentId}. Vui lòng thử lại.`); }
+  };
   return <>
     <div className="dashboard-heading">
-      <div><span className="eyebrow">MARKETING LEADER</span><h1>Tổng quan vận hành</h1><p>Dữ liệu nội bộ và YouTube được tổng hợp độc lập; nguồn chưa kết nối không làm Dashboard gián đoạn.</p></div>
+      <div><span className="eyebrow">MARKETING OPERATIONS</span><h1>Công việc Marketing hôm nay</h1><p>Bắt đầu công việc, theo dõi tiến độ và xử lý những bước đang chờ trong một nơi.</p></div>
       <button className="secondary" disabled={loading} onClick={load}><RefreshCw size={16}/>{loading ? 'Đang cập nhật…' : 'Cập nhật'}</button>
     </div>
     {error && <div className="report-warning"><AlertTriangle size={16}/>{error}</div>}
-    <section className="dashboard-section"><div className="dashboard-section-title"><span>NỘI DUNG</span><small>Cập nhật {new Date(data.generatedAt).toLocaleString('vi-VN')}</small></div>
-      <div className="stats-grid"><StatCard label="Đang làm" value={data.content.inProgress} note="Content đang trong pipeline" icon={Clock3} tone="blue"/><StatCard label="Chờ duyệt" value={data.content.awaitingApproval} note="Cần Marketing Leader xem" icon={FileCheck2} tone="amber"/><StatCard label="Sẵn sàng đăng" value={data.content.readyToPublish} note="Đã duyệt hoặc đã lên lịch" icon={ShieldCheck} tone="violet"/><StatCard label="Đã hoàn tất" value={data.content.completed} note={`Tổng ${data.content.total} Content`} icon={CheckCircle2} tone="green"/></div>
+    <section className="panel today-work"><div className="panel-head"><div><span className="eyebrow">ƯU TIÊN</span><h2>Việc cần làm hôm nay</h2></div><small>Tối đa {operations.today.length} việc cần hành động</small></div>
+      {operations.today.length === 0 ? <p className="empty-line">Không có việc cần xử lý ngay.</p> : <div className="today-list">{operations.today.map((item) => <button key={item.id} onClick={() => openItem(item.contentDocId)}><i className={item.reason}/><span><strong>{item.label}</strong><small>{item.contentId}{item.dueDate ? ` · Hạn ${new Date(`${item.dueDate}T00:00:00`).toLocaleDateString('vi-VN')}` : ''}</small></span>{item.priority === 'high' && <Badge tone="warning">Ưu tiên cao</Badge>}</button>)}</div>}
     </section>
-    <section className="dashboard-section"><div className="dashboard-section-title"><span>THÁNG NÀY</span></div><div className="month-grid">
-      <Metric label="Video" value={data.month.videos}/><Metric label="Bài Website" value={data.month.websiteArticles}/><Metric label="Đã đăng YouTube" value={data.month.youtubePublished}/><Metric label="Social đã ghi nhận đăng" value={data.month.socialPublished}/>
-    </div></section>
-    <div className="dashboard-columns">
-      <section className="panel"><div className="panel-head"><div><span className="eyebrow">CẦN XỬ LÝ</span><h2>Việc đang chờ</h2></div></div><div className="attention-list">
-        <Attention label="Flow cần xử lý thủ công" value={data.pending.flowNeedsManual}/><Attention label="Lỗi đăng Content" value={data.pending.publishingErrors}/><Attention label="Local Agent" value={data.pending.localAgentOffline ? 'Offline' : 'Online'} danger={data.pending.localAgentOffline}/><Attention label="Content chờ duyệt" value={data.pending.awaitingApproval}/>
-      </div></section>
-      <YouTubeSummary data={data}/>
-    </div>
-    <PipelineTable data={data}/>
+    <section className="quick-create-card"><div><span className="eyebrow">TẠO NHANH</span><h2>Bắt đầu công việc mới</h2><p>Hệ thống tự cấp Content ID và mở thẳng Studio phù hợp.</p></div><button className="primary" onClick={onCreateWork}><Plus size={17}/>Tạo công việc</button></section>
+    <section className="dashboard-section"><div className="dashboard-section-title"><span>CÔNG VIỆC</span><small>Cập nhật {new Date(data.generatedAt).toLocaleString('vi-VN')}</small></div>
+      <div className="stats-grid"><StatCard label="Đang làm" value={data.content.inProgress} note="Content đang trong pipeline" icon={Clock3} tone="blue"/><StatCard label="Cần duyệt" value={data.content.awaitingApproval} note="Cần Marketing Leader xem" icon={FileCheck2} tone="amber"/><StatCard label="Sẵn sàng đăng" value={data.content.readyToPublish} note="Đã duyệt hoặc đã lên lịch" icon={ShieldCheck} tone="violet"/><StatCard label="Hoàn tất" value={data.content.completed} note={`Tổng ${data.content.total} Content`} icon={CheckCircle2} tone="green"/></div>
+    </section>
+    <section className="panel operations-work"><div className="operations-toolbar"><div className="work-filters">{([['all','Tất cả'],['working','Đang làm'],['review','Cần duyệt'],['ready','Sẵn sàng đăng'],['completed','Hoàn tất']] as Array<[MarketingWorkFilter,string]>).map(([key,label]) => <button className={filter === key ? 'active' : ''} key={key} onClick={() => setFilter(key)}>{label}</button>)}</div><label className="work-search"><Search size={15}/><input aria-label="Tìm công việc" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm ID, tiêu đề, chủ đề"/></label></div>
+      {work.length === 0 ? <p className="empty-line">Không tìm thấy công việc phù hợp.</p> : <div className="work-list">{work.map((item) => <article key={item.id} className={item.overdue ? 'overdue' : ''}><button className="work-main" onClick={() => openItem(item.id)}><span className={`work-type ${item.type}`}>{item.type === 'video' ? <Video size={16}/> : <FileText size={16}/>}</span><span className="work-name"><strong>{item.title}</strong><small>{item.contentId} · {item.type === 'video' ? 'Video' : 'Bài Website'}</small></span><Badge tone={item.statusGroup === 'completed' ? 'success' : item.overdue ? 'danger' : item.statusGroup === 'review' ? 'warning' : 'info'}>{item.statusLabel}</Badge><span className="work-progress"><i><b style={{ width: `${item.progress}%` }}/></i><small>{item.progress}% · {item.currentStep}</small></span><span className="work-due">{item.dueDate ? <><strong>{item.overdue ? 'Quá hạn' : 'Hạn hoàn thành'}</strong><small>{new Date(`${item.dueDate}T00:00:00`).toLocaleDateString('vi-VN')}</small></> : <small>Chưa đặt hạn</small>}</span><small className="work-updated">{new Date(item.updatedAt).toLocaleDateString('vi-VN')}</small></button><div className="work-actions"><button className="secondary" onClick={() => runQuickAction(item)}>{item.quickAction === 'open_video_folder' && <FolderOpen size={14}/>} {item.quickActionLabel}</button>{item.statusGroup !== 'completed' && <button className="text-button" onClick={() => markComplete(item)}><CheckCircle2 size={14}/>Đánh dấu hoàn tất</button>}{item.status !== 'archived' && <button className="text-button" onClick={() => archive(item)}><Archive size={14}/>Lưu trữ</button>}</div></article>)}</div>}
+    </section>
+    <section className="dashboard-section"><div className="dashboard-section-title"><span>BÁO CÁO NHANH</span></div><div className="month-grid"><Metric label="Video tháng này" value={data.month.videos}/><Metric label="Bài Website" value={data.month.websiteArticles}/><Metric label="Đã đăng YouTube" value={data.month.youtubePublished}/><Metric label="Social đã ghi nhận" value={data.month.socialPublished}/></div></section>
+    <div className="dashboard-columns"><YouTubeSummary data={data}/><section className="panel"><div className="panel-head"><div><span className="eyebrow">CẦN XỬ LÝ</span><h2>Tổng hợp</h2></div></div><div className="attention-list"><Attention label="Flow cần kiểm tra" value={data.pending.flowNeedsManual}/><Attention label="Lỗi đăng Content" value={data.pending.publishingErrors}/><Attention label="Local Agent" value={data.pending.localAgentOffline ? 'Offline' : 'Online'} danger={data.pending.localAgentOffline}/><Attention label="Content cần duyệt" value={data.pending.awaitingApproval}/></div></section></div>
     <section className="panel health-compact"><div className="panel-head"><div><span className="eyebrow">TÌNH TRẠNG</span><h2>Hệ thống Marketing</h2></div></div><div className="health-compact-grid">{data.health.map((item) => <div key={item.key}><i className={item.status}></i><span><strong>{item.label}</strong><small>{item.detail}</small></span></div>)}</div></section>
     <div className="analytics-safe-grid"><AnalyticsSafe title="GA4" label={data.analytics.ga4.label}/><AnalyticsSafe title="Search Console" label={data.analytics.searchConsole.label}/></div>
   </>;

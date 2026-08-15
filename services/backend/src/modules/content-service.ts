@@ -8,13 +8,17 @@ import { db } from '../firebase.js';
 export const contentRouter = Router();
 
 const optionalText = (max: number) => z.string().max(max).optional();
+const operationFields = {
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  priority: z.enum(['normal', 'high']).optional(),
+};
 const createContentSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('video'), title: z.string().trim().min(1).max(300) }).strict(),
+  z.object({ type: z.literal('video'), title: z.string().trim().min(1).max(300), notes: optionalText(10_000), ...operationFields }).strict(),
   z.object({
     type: z.literal('article'), title: z.string().trim().min(1).max(300), topic: z.string().trim().min(1).max(500),
     body: optionalText(100_000), objective: optionalText(5_000), shortDescription: optionalText(5_000),
     sourceMaterial: optionalText(50_000), notes: optionalText(10_000), desiredLength: optionalText(200),
-    platforms: z.array(z.enum(['website', 'facebook', 'zalo', 'linkedin'])).min(1).max(4).optional(),
+    platforms: z.array(z.enum(['website', 'facebook', 'zalo', 'linkedin'])).min(1).max(4).optional(), ...operationFields,
   }).strict(),
 ]);
 
@@ -141,8 +145,31 @@ contentRouter.post('/:contentId/ready', async (request, response, next) => {
 });
 
 contentRouter.post('/:contentId/status', async (request, response, next) => {
-  try { const { status } = z.object({ status: z.enum(['draft','in_production','post_production','awaiting_copy','review','approved','ready_to_publish','test','archived']) }).parse(request.body); const uid = response.locals.identity.uid; const now = new Date().toISOString(); await db().collection('contents').doc(request.params.contentId).update({ status, updatedAt: now }); await audit(uid, 'content.status', request.params.contentId, { status }); response.json({ status }); }
+  try { const { status } = z.object({ status: z.enum(['draft','in_production','post_production','awaiting_copy','review','approved','ready_to_publish','completed','test','archived']) }).parse(request.body); const uid = response.locals.identity.uid; const now = new Date().toISOString(); await db().collection('contents').doc(request.params.contentId).update({ status, updatedAt: now }); await audit(uid, 'content.status', request.params.contentId, { status }); response.json({ status }); }
   catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/complete', async (request, response, next) => {
+  try {
+    const uid = response.locals.identity.uid; const now = new Date().toISOString();
+    const ref = db().collection('contents').doc(request.params.contentId); const snapshot = await ref.get();
+    if (!snapshot.exists) { response.status(404).json({ error: 'CONTENT_NOT_FOUND' }); return; }
+    await ref.update({ status: 'completed', completedAt: now, completedBy: uid, updatedAt: now });
+    await audit(uid, 'content.complete', request.params.contentId);
+    response.json({ status: 'completed', completedAt: now });
+  } catch (error) { next(error); }
+});
+
+contentRouter.post('/:contentId/archive', async (request, response, next) => {
+  try {
+    const uid = response.locals.identity.uid; const now = new Date().toISOString();
+    const ref = db().collection('contents').doc(request.params.contentId); const snapshot = await ref.get();
+    if (!snapshot.exists) { response.status(404).json({ error: 'CONTENT_NOT_FOUND' }); return; }
+    const currentStatus = String(snapshot.data()?.status ?? 'draft');
+    if (currentStatus !== 'archived') await ref.update({ status: 'archived', archivedFromStatus: currentStatus, archivedAt: now, archivedBy: uid, updatedAt: now });
+    await audit(uid, 'content.archive', request.params.contentId, { fromStatus: currentStatus });
+    response.json({ status: 'archived', archivedAt: now });
+  } catch (error) { next(error); }
 });
 
 contentRouter.post('/:contentId/audit', async (request, response, next) => {

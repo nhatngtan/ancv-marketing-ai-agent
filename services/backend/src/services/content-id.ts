@@ -6,11 +6,11 @@ const VIDEO_PLATFORMS: Platform[] = ['youtube', 'tiktok', 'facebook', 'zalo', 'l
 const ARTICLE_PLATFORMS: Platform[] = ['website', 'facebook', 'zalo', 'linkedin'];
 
 export type CreateContentInput =
-  | { type: 'video'; title: string }
+  | { type: 'video'; title: string; notes?: string; dueDate?: string; priority?: 'normal' | 'high' }
   | {
       type: 'article'; title: string; topic: string; body?: string; objective?: string;
       shortDescription?: string; sourceMaterial?: string; notes?: string; desiredLength?: string;
-      platforms?: Platform[];
+      platforms?: Platform[]; dueDate?: string; priority?: 'normal' | 'high';
     };
 
 function contentIdForSequence(type: ContentType, year: number, sequence: number): string {
@@ -24,6 +24,9 @@ export function buildContentRecord(input: CreateContentInput, id: string, conten
     id, contentId, type: input.type, title: input.title, topic: input.type === 'video' ? input.title : input.topic,
     body: input.type === 'video' ? '' : (input.body ?? ''), status: 'draft' as const,
     createdAt: timestamp, updatedAt: timestamp, createdBy: uid, platformCopies: {},
+    priority: input.priority ?? 'normal',
+    ...(input.dueDate ? { dueDate: input.dueDate } : {}),
+    ...(input.notes !== undefined ? { notes: input.notes } : {}),
     platforms: platforms.map((platform) => ({ platform, status: 'manual_pending' as const, mode: 'manual' as const })),
   };
   if (input.type === 'video') return { ...common, characterReferences: [], visualStyle: {} };
@@ -32,7 +35,6 @@ export function buildContentRecord(input: CreateContentInput, id: string, conten
     ...(input.objective !== undefined ? { objective: input.objective } : {}),
     ...(input.shortDescription !== undefined ? { shortDescription: input.shortDescription } : {}),
     ...(input.sourceMaterial !== undefined ? { sourceMaterial: input.sourceMaterial } : {}),
-    ...(input.notes !== undefined ? { notes: input.notes } : {}),
     ...(input.desiredLength !== undefined ? { desiredLength: input.desiredLength } : {}),
   };
 }

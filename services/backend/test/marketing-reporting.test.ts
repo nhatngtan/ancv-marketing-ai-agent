@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectorRecord, ContentRecord, MarketingDashboardResponse, PublishingJobRecord } from '@ancv/shared';
-import { buildMarketingDashboard, derivePipelineItem, YouTubeReportingClient } from '../src/services/marketing-reporting.js';
+import { buildMarketingDashboard, deriveMarketingOperations, derivePipelineItem, YouTubeReportingClient } from '../src/services/marketing-reporting.js';
 
 const now = new Date('2026-08-15T08:00:00.000Z');
 
@@ -44,11 +44,11 @@ describe('marketing reporting aggregation', () => {
       publishingJobs: [{ id: 'yt', status: 'succeeded', completedAt: '2026-08-12T00:00:00.000Z' } as PublishingJobRecord],
       flowJobs: [{ id: 'flow', status: 'needs_manual' } as never], localAgents: [], connectors: [], openAIStatus: 'available',
     }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
-    expect(result.content).toMatchObject({ awaitingApproval: 1, completed: 2 });
+    expect(result.content).toMatchObject({ awaitingApproval: 1, completed: 1 });
     expect(result.pending).toMatchObject({ flowNeedsManual: 1, localAgentOffline: true, awaitingApproval: 1 });
     expect(result.month).toMatchObject({ youtubePublished: 1, socialPublished: 1, websiteArticles: 1 });
     expect(result.publishing).toMatchObject({ total: 2, byPlatform: { youtube: 1, facebook: 1 } });
-    expect(result.report).toMatchObject({ completedVideos: 1, completedArticles: 1, publishedPosts: 2, pendingContents: 1 });
+    expect(result.report).toMatchObject({ completedVideos: 1, completedArticles: 0, publishedPosts: 2, pendingContents: 2 });
   });
 
   it('never fabricates GA4 or Search Console data when connectors are unavailable', () => {
@@ -69,6 +69,25 @@ describe('marketing reporting aggregation', () => {
     }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
     expect(result.publishing.total).toBe(0);
     expect(result.pipeline[0]?.platforms).toEqual([]);
+    expect(result.operations.work[0]).toMatchObject({ priority: 'normal', overdue: false });
+  });
+
+  it('derives deadline, priority, progress, today action and quick action without a task collection', () => {
+    const video = content({ id: 'video-overdue', dueDate: '2026-08-14', priority: 'high', masterScript: 'Script' });
+    const article = content({ id: 'article-review', contentId: 'ANCV-ART-2026-002', type: 'article', title: 'Bài cần duyệt', body: 'Bài SEO', status: 'review' });
+    const operations = deriveMarketingOperations({ contents: [video, article], scenes: [], assets: [], flowJobs: [], publishingJobs: [] }, now);
+    expect(operations.work[0]).toMatchObject({ id: 'video-overdue', priority: 'high', overdue: true, progress: 15, quickAction: 'open_script' });
+    expect(operations.today[0]).toMatchObject({ contentDocId: 'video-overdue', reason: 'overdue', priority: 'high' });
+    expect(operations.today[1]).toMatchObject({ contentDocId: 'article-review', reason: 'review' });
+  });
+
+  it('does not report an online Local Agent when its heartbeat is stale', () => {
+    const result = buildMarketingDashboard({
+      contents: [], scenes: [], assets: [], publishingJobs: [], flowJobs: [], connectors: [],
+      localAgents: [{ id: 'ancv-windows-01', status: 'online', lastSeen: '2026-08-15T07:58:00.000Z' } as never],
+    }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
+    expect(result.pending.localAgentOffline).toBe(true);
+    expect(result.health.find((item) => item.key === 'local_agent')?.status).toBe('offline');
   });
 });
 

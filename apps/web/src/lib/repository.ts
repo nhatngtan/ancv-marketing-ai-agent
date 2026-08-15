@@ -5,8 +5,8 @@ import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
 type CreateContentInput =
-  | { type: 'video'; title: string }
-  | { type: 'article'; title: string; topic: string; body?: string; objective?: string; shortDescription?: string; sourceMaterial?: string; notes?: string; desiredLength?: string; platforms: Platform[] };
+  | { type: 'video'; title: string; notes?: string; dueDate?: string; priority?: 'normal' | 'high' }
+  | { type: 'article'; title: string; topic: string; body?: string; objective?: string; shortDescription?: string; sourceMaterial?: string; notes?: string; desiredLength?: string; platforms: Platform[]; dueDate?: string; priority?: 'normal' | 'high' };
 
 class ApiRequestError extends Error {
   constructor(message: string, readonly code: string) { super(message); this.name = 'ApiRequestError'; }
@@ -82,7 +82,12 @@ export function subscribeMonthlyAIUsage(callback: (summary: { requests: number; 
 }
 
 export function buildCreateContentPayload(input: CreateContentInput): CreateContentInput {
-  if (input.type === 'video') return { type: 'video', title: input.title.trim() };
+  if (input.type === 'video') return {
+    type: 'video', title: input.title.trim(),
+    ...(input.notes !== undefined ? { notes: input.notes } : {}),
+    ...(input.dueDate ? { dueDate: input.dueDate } : {}),
+    ...(input.priority ? { priority: input.priority } : {}),
+  };
   return {
     type: 'article', title: input.title.trim(), topic: input.topic.trim(), platforms: input.platforms,
     ...(input.body !== undefined ? { body: input.body } : {}),
@@ -91,6 +96,8 @@ export function buildCreateContentPayload(input: CreateContentInput): CreateCont
     ...(input.sourceMaterial !== undefined ? { sourceMaterial: input.sourceMaterial } : {}),
     ...(input.notes !== undefined ? { notes: input.notes } : {}),
     ...(input.desiredLength !== undefined ? { desiredLength: input.desiredLength } : {}),
+    ...(input.dueDate ? { dueDate: input.dueDate } : {}),
+    ...(input.priority ? { priority: input.priority } : {}),
   };
 }
 
@@ -102,7 +109,8 @@ export async function createContent(input: CreateContentInput): Promise<ContentR
   const record: ContentRecord = {
     id, contentId: `ANCV-${input.type === 'video' ? 'VID' : 'ART'}-${now.getFullYear()}-LOCAL-${String(Date.now()).slice(-5)}`,
     type: input.type, title: input.title, topic: input.type === 'video' ? input.title : input.topic, body: input.type === 'article' ? (input.body ?? '') : '',
-    status: 'draft', createdAt: now.toISOString(), updatedAt: now.toISOString(), createdBy: 'demo-user', platformCopies: {},
+    status: 'draft', createdAt: now.toISOString(), updatedAt: now.toISOString(), createdBy: 'demo-user', platformCopies: {}, priority: input.priority ?? 'normal',
+    ...(input.dueDate ? { dueDate: input.dueDate } : {}), ...(input.notes !== undefined ? { notes: input.notes } : {}),
     platforms: (input.type === 'video' ? videoPlatforms : articlePlatforms).map((platform) => ({ platform, status: 'manual_pending', mode: 'manual' })),
     ...(input.type === 'video' ? { characterReferences: [], visualStyle: {} } : {}),
   };
@@ -110,6 +118,8 @@ export async function createContent(input: CreateContentInput): Promise<ContentR
 }
 export async function updateContent(id: string, changes: Partial<ContentRecord>) { if (!firestore) { writeLocal(readLocal().map((item) => item.id === id ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item)); return; } await updateDoc(doc(firestore, 'contents', id), { ...changes, updatedAt: serverTimestamp() }); }
 export async function removeContent(id: string) { if (!firestore) { writeLocal(readLocal().filter((item) => item.id !== id)); return; } await updateDoc(doc(firestore, 'contents', id), { status: 'archived', testContent: true, updatedAt: serverTimestamp() }); }
+export async function completeContent(id: string) { if (!firebaseConfigured) { await updateContent(id, { status: 'completed', completedAt: new Date().toISOString(), completedBy: 'demo-user' }); return; } return api(`/v1/content/${id}/complete`, { method: 'POST' }); }
+export async function archiveContent(id: string) { if (!firebaseConfigured) { const current = readLocal().find((item) => item.id === id); await updateContent(id, { status: 'archived', archivedFromStatus: current?.status as ContentRecord['archivedFromStatus'], archivedAt: new Date().toISOString(), archivedBy: 'demo-user' }); return; } return api(`/v1/content/${id}/archive`, { method: 'POST' }); }
 
 export async function createScene(contentId: string, scene: Partial<SceneRecord> & { title: string }) { return trackedApi<SceneRecord>('create_scenes', `/v1/content/${contentId}/scenes`, { method: 'POST', body: JSON.stringify(scene) }, { contentId }); }
 export async function saveScene(contentId: string, sceneId: string, changes: Partial<SceneRecord>) { return api(`/v1/content/${contentId}/scenes/${sceneId}`, { method: 'PATCH', body: JSON.stringify(changes) }); }

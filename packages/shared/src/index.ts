@@ -18,9 +18,10 @@ export type ContentType = 'video' | 'article';
 export const CONTENT_STATUSES = [
   'idea', 'draft', 'generating', 'in_production', 'post_production', 'awaiting_copy',
   'review', 'approved', 'ready_to_publish', 'scheduled', 'partially_published',
-  'published', 'archived', 'test',
+  'published', 'completed', 'archived', 'test',
 ] as const;
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
+export type ContentPriority = 'normal' | 'high';
 export type PublishingStatus = 'pending' | 'processing' | 'published' | 'needs_action' | 'manual_pending' | 'failed' | 'skipped';
 export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type FlowAccountStatus = 'ready' | 'needs_login' | 'needs_verification' | 'unavailable';
@@ -88,6 +89,8 @@ export interface ContentRecord extends AuditFields {
   shortDescription?: string;
   fullDescription?: string;
   scheduledAt?: string;
+  dueDate?: string;
+  priority?: ContentPriority;
   platforms: PlatformPublication[];
   testContent?: boolean;
   objective?: string;
@@ -101,6 +104,11 @@ export interface ContentRecord extends AuditFields {
   finalVideoAssetId?: string;
   approvedAt?: string;
   approvedBy?: string;
+  completedAt?: string;
+  completedBy?: string;
+  archivedAt?: string;
+  archivedBy?: string;
+  archivedFromStatus?: ContentStatus;
   flowProjectUrl?: string;
   articleSeo?: ArticleSeoData;
   wordpressDraft?: WordPressDraftState;
@@ -440,8 +448,34 @@ export interface MarketingPipelineItem {
   status: ContentStatus;
   currentStep: string;
   progress: number;
+  dueDate?: string;
+  priority: ContentPriority;
   platforms: Array<{ platform: Platform; status: PublishingStatus }>;
   updatedAt: string;
+}
+
+export type MarketingWorkFilter = 'all' | 'working' | 'review' | 'ready' | 'completed';
+export type MarketingQuickAction = 'open_script' | 'open_video_folder' | 'open_publish' | 'open_article' | 'open_wordpress';
+
+export interface MarketingWorkItem extends MarketingPipelineItem {
+  statusGroup: Exclude<MarketingWorkFilter, 'all'>;
+  statusLabel: string;
+  overdue: boolean;
+  quickAction: MarketingQuickAction;
+  quickActionLabel: string;
+}
+
+export interface MarketingTodayAction {
+  id: string;
+  contentDocId: string;
+  contentId: string;
+  title: string;
+  type: ContentType;
+  label: string;
+  reason: 'overdue' | 'flow_needs_manual' | 'review' | 'missing_final' | 'copies_review' | 'wordpress_draft' | 'youtube_upload' | 'continue_work';
+  priority: ContentPriority;
+  dueDate?: string;
+  quickAction: MarketingQuickAction;
 }
 
 export interface YouTubePeriodMetrics {
@@ -492,6 +526,10 @@ export interface MarketingDashboardResponse {
     byPlatform: Partial<Record<Platform, number>>;
   };
   pipeline: MarketingPipelineItem[];
+  operations: {
+    work: MarketingWorkItem[];
+    today: MarketingTodayAction[];
+  };
   youtube: {
     status: 'connected' | 'unavailable';
     auth: 'pass' | 'unavailable';

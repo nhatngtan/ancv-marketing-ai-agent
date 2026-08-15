@@ -47,10 +47,11 @@ describe('atomic Content creation', () => {
 
   it('creates exactly one Video with fixed platforms and no undefined fields', async () => {
     const fake = fakeFirestore();
-    const content = await createContentWithId({ type: 'video', title: 'TEST VIDEO E2E' }, 'editor-1', now, fake.store);
+    const content = await createContentWithId({ type: 'video', title: 'TEST VIDEO E2E', notes: 'Yêu cầu thêm', dueDate: '2026-08-20', priority: 'high' }, 'editor-1', now, fake.store);
     expect(content.contentId).toBe('ANCV-VID-2026-001');
     expect(content.topic).toBe('TEST VIDEO E2E');
     expect(content.platforms.map((item) => item.platform)).toEqual(['youtube', 'tiktok', 'facebook', 'zalo', 'linkedin']);
+    expect(content).toMatchObject({ dueDate: '2026-08-20', priority: 'high', notes: 'Yêu cầu thêm' });
     expect([...fake.data.keys()].filter((key) => key.startsWith('contents/'))).toHaveLength(1);
     expect(hasUndefined(content)).toBe(false);
     expect(content).not.toHaveProperty('objective');
@@ -69,6 +70,7 @@ describe('atomic Content creation', () => {
     expect(content.platforms.map((item) => item.platform)).toEqual(['website', 'facebook']);
     expect(content).not.toHaveProperty('visualStyle');
     expect(content).not.toHaveProperty('characterReferences');
+    expect(content.priority).toBe('normal');
     expect(hasUndefined(content)).toBe(false);
   });
 });

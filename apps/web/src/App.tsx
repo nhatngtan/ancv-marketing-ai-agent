@@ -5,7 +5,7 @@ import {
   Sparkles, Video, X,
 } from 'lucide-react';
 import {
-  connectorModeVi, connectorStatusVi, type ConnectorRecord, type ContentRecord, type ContentType,
+  connectorModeVi, connectorStatusVi, type ConnectorRecord, type ContentPriority, type ContentRecord, type ContentType,
   type HealthItem, type LocalAgentRecord, type Platform, type PublishingStatus,
 } from '@ancv/shared';
 import { Badge } from './components/Badge';
@@ -70,6 +70,7 @@ export default function App() {
   const [connectors, setConnectors] = useState<ConnectorRecord[]>(DEFAULT_CONNECTORS);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCreate, setShowCreate] = useState<ContentType | null>(null);
+  const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [openContentId, setOpenContentId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [user, setUser] = useState<User | null>(null);
@@ -113,7 +114,7 @@ export default function App() {
       <section className="workspace">
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
         {firebaseConfigured && !authReady ? <section className="signin-panel"><span className="eyebrow">ĐANG XÁC MINH</span><h1>Đang tải phiên làm việc…</h1><p>Hệ thống đang kiểm tra quyền truy cập an toàn.</p></section> : firebaseConfigured && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
-          {page === 'overview' && <MarketingDashboard contents={contents}/>}
+          {page === 'overview' && <MarketingDashboard contents={contents} onCreateWork={() => setShowQuickCreate(true)} onOpenContent={(content) => { setPage(content.type === 'video' ? 'video' : 'article'); setOpenContentId(content.id); }} onToast={setToast}/>}
           {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} localAgents={localAgents} openContentId={openContentId} onOpened={() => setOpenContentId(null)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
           {page === 'health' && <HealthPage connectors={connectors} localAgents={localAgents}/>}
@@ -134,8 +135,48 @@ export default function App() {
         }}
       />
     )}
+    {showQuickCreate && <QuickWorkModal
+      onClose={() => setShowQuickCreate(false)}
+      onSaved={(content) => {
+        setShowQuickCreate(false);
+        setPage(content.type === 'video' ? 'video' : 'article');
+        setOpenContentId(content.id);
+        setToast(`Đã tạo ${content.type === 'video' ? 'Video' : 'Bài Website'} ${content.contentId}.`);
+      }}
+    />}
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}
   </div>;
+}
+
+export function QuickWorkModal({ onClose, onSaved, createAction = createContent }: { onClose: () => void; onSaved: (content: ContentRecord) => void; createAction?: typeof createContent }) {
+  const [type, setType] = useState<ContentType>('video');
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setErrorMessage('');
+    const data = new FormData(event.currentTarget);
+    const title = String(data.get('title') ?? '').trim();
+    const notes = String(data.get('notes') ?? '').trim() || undefined;
+    const dueDate = String(data.get('dueDate') ?? '').trim() || undefined;
+    const priority = (String(data.get('priority') ?? 'normal') === 'high' ? 'high' : 'normal') as ContentPriority;
+    try {
+      const content = type === 'video'
+        ? await createAction({ type, title, notes, dueDate, priority })
+        : await createAction({ type, title, topic: title, body: '', notes, dueDate, priority, platforms: ['website', 'facebook', 'zalo', 'linkedin'] });
+      onSaved(content);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? ` (${String(error.code)})` : '';
+      setErrorMessage(`Không thể tạo công việc. Hệ thống chưa lưu dữ liệu.${code}`);
+    } finally { setBusy(false); }
+  };
+  return <div className="modal-wrap"><button className="modal-scrim" onClick={onClose}/><form className="modal quick-work-modal" onSubmit={submit}><div className="modal-head"><div><span className="eyebrow">MARKETING OPERATIONS</span><h2>Tạo công việc</h2></div><button type="button" onClick={onClose}><X/></button></div>
+    <label>Loại<select value={type} onChange={(event) => setType(event.target.value as ContentType)}><option value="video">Video</option><option value="article">Bài Website</option></select></label>
+    <label>Tiêu đề / Chủ đề<input name="title" required autoFocus maxLength={300} placeholder={type === 'video' ? 'Ví dụ: Video bảo vệ nhà máy' : 'Ví dụ: Tiêu chí chọn dịch vụ bảo vệ'}/></label>
+    <label>Yêu cầu thêm <span className="optional">(không bắt buộc)</span><textarea name="notes" rows={3} maxLength={10_000}/></label>
+    <div className="form-grid"><label>Ngày dự kiến hoàn thành <span className="optional">(không bắt buộc)</span><input type="date" name="dueDate"/></label><label>Ưu tiên<select name="priority" defaultValue="normal"><option value="normal">Bình thường</option><option value="high">Cao</option></select></label></div>
+    {errorMessage && <div className="form-error" role="alert"><CircleAlert size={16}/><span>{errorMessage}</span></div>}
+    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}><Plus size={16}/>{busy ? 'Đang tạo…' : 'Tạo công việc'}</button></div>
+  </form></div>;
 }
 
 function SignInScreen({ onLogin }: { onLogin: () => Promise<void> }) {
