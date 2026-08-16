@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
 import { aggregatePublishingStatus, evaluateArticleSeo, type CompanyProfile, type ContentRecord, type MediaAssetRecord, type PlatformPublication } from '@ancv/shared';
 import { allocateContentId, createContentWithId } from '../services/content-id.js';
 import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
@@ -30,6 +31,36 @@ const sceneFields = {
 };
 const sceneCreateSchema = z.object(sceneFields).partial().extend({ title: z.string().min(1).max(200) });
 const sceneUpdateSchema = z.object(sceneFields).partial().refine((value) => Object.keys(value).length > 0);
+
+function sceneNotFound(): Error & { statusCode: number } {
+  return Object.assign(new Error('SCENE_NOT_FOUND'), { statusCode: 404 });
+}
+
+export async function requireSceneParent(store: Firestore, contentId: string, sceneId: string): Promise<DocumentReference> {
+  const reference = store.collection('scenes').doc(sceneId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists || snapshot.data()?.contentDocId !== contentId) throw sceneNotFound();
+  return reference;
+}
+
+export async function updateSceneForContent(store: Firestore, contentId: string, sceneId: string, changes: Record<string, unknown>): Promise<void> {
+  const reference = await requireSceneParent(store, contentId, sceneId);
+  await reference.update(changes);
+}
+
+export async function deleteSceneForContent(store: Firestore, contentId: string, sceneId: string): Promise<void> {
+  const reference = await requireSceneParent(store, contentId, sceneId);
+  await reference.delete();
+}
+
+export async function reorderScenesForContent(store: Firestore, contentId: string, sceneIds: string[], updatedAt: string): Promise<void> {
+  const references = sceneIds.map((sceneId) => store.collection('scenes').doc(sceneId));
+  const snapshots = await store.getAll(...references);
+  if (snapshots.some((snapshot) => !snapshot.exists || snapshot.data()?.contentDocId !== contentId)) throw sceneNotFound();
+  const batch = store.batch();
+  references.forEach((reference, index) => batch.update(reference, { sceneNumber: index + 1, updatedAt }));
+  await batch.commit();
+}
 
 async function audit(uid: string, action: string, entityId: string, detail?: Record<string, unknown>) {
   const now = new Date().toISOString(); const ref = db().collection('auditLogs').doc();
@@ -97,12 +128,12 @@ contentRouter.post('/:contentId/scenes', async (request, response, next) => {
 });
 
 contentRouter.patch('/:contentId/scenes/:sceneId', async (request, response, next) => {
-  try { const input = sceneUpdateSchema.parse(request.body); const uid = response.locals.identity.uid; await db().collection('scenes').doc(request.params.sceneId).update({ ...input, updatedAt: new Date().toISOString() }); await audit(uid, 'scene.update', request.params.contentId, { sceneId: request.params.sceneId }); response.json({ ok: true }); }
+  try { const input = sceneUpdateSchema.parse(request.body); const uid = response.locals.identity.uid; await updateSceneForContent(db(), request.params.contentId, request.params.sceneId, { ...input, updatedAt: new Date().toISOString() }); await audit(uid, 'scene.update', request.params.contentId, { sceneId: request.params.sceneId }); response.json({ ok: true }); }
   catch (error) { next(error); }
 });
 
 contentRouter.delete('/:contentId/scenes/:sceneId', async (request, response, next) => {
-  try { const uid = response.locals.identity.uid; await db().collection('scenes').doc(request.params.sceneId).delete(); await audit(uid, 'scene.delete', request.params.contentId, { sceneId: request.params.sceneId }); response.status(204).end(); }
+  try { const uid = response.locals.identity.uid; await deleteSceneForContent(db(), request.params.contentId, request.params.sceneId); await audit(uid, 'scene.delete', request.params.contentId, { sceneId: request.params.sceneId }); response.status(204).end(); }
   catch (error) { next(error); }
 });
 
@@ -117,8 +148,8 @@ contentRouter.post('/:contentId/scenes/:sceneId/duplicate', async (request, resp
 
 contentRouter.post('/:contentId/scenes/reorder', async (request, response, next) => {
   try {
-    const { sceneIds } = z.object({ sceneIds: z.array(z.string().min(1)).min(1).max(120) }).parse(request.body); const batch = db().batch(); const now = new Date().toISOString();
-    sceneIds.forEach((id,index) => batch.update(db().collection('scenes').doc(id), { sceneNumber: index + 1, updatedAt: now })); await batch.commit(); await audit(response.locals.identity.uid, 'scene.reorder', request.params.contentId, { count: sceneIds.length }); response.json({ ok: true });
+    const { sceneIds } = z.object({ sceneIds: z.array(z.string().min(1)).min(1).max(120) }).parse(request.body); const now = new Date().toISOString();
+    await reorderScenesForContent(db(), request.params.contentId, sceneIds, now); await audit(response.locals.identity.uid, 'scene.reorder', request.params.contentId, { count: sceneIds.length }); response.json({ ok: true });
   } catch (error) { next(error); }
 });
 

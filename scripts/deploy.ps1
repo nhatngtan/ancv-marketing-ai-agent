@@ -8,11 +8,9 @@ if ($account -ne $ExpectedAccount -or $firebaseAccount -ne $ExpectedAccount) { t
 
 npm.cmd run verify
 if ($LASTEXITCODE -ne 0) { throw 'Local verification failed; deployment stopped.' }
-& $gcloud run deploy ancv-marketing-backend --source . --project $ProjectId --region $Region --service-account="ancv-cloud-run@$ProjectId.iam.gserviceaccount.com" --allow-unauthenticated --set-env-vars="NODE_ENV=production" --quiet
+& $gcloud run deploy ancv-marketing-backend --source . --project $ProjectId --region $Region --service-account="ancv-cloud-run@$ProjectId.iam.gserviceaccount.com" --allow-unauthenticated --env-vars-file=infra/cloud-run.env.yaml --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Cloud Run deployment failed.' }
 $backendUrl = & $gcloud run services describe ancv-marketing-backend --project $ProjectId --region $Region --format='value(status.url)'
-& $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --env-vars-file=infra/cloud-run.env.yaml --quiet
-if ($LASTEXITCODE -ne 0) { throw 'Cloud Run environment update failed.' }
 $openAIVersion = & $gcloud secrets versions list openai-api-key --project=$ProjectId --filter='state:ENABLED' --limit=1 --format='value(name)' 2>$null
 if ($openAIVersion) {
   & $gcloud run services update ancv-marketing-backend --project=$ProjectId --region=$Region --update-secrets='OPENAI_API_KEY=openai-api-key:latest' --quiet
@@ -37,6 +35,8 @@ if ($youtubeClientIdVersion -and $youtubeClientSecretVersion -and $youtubeRefres
 } else {
   Write-Warning 'YouTube OAuth secrets have no enabled versions; YouTube remains semi_automatic/manual.'
 }
+& "$PSScriptRoot\verify-cloud-run-env.ps1" -ProjectId $ProjectId -Region $Region
+if ($LASTEXITCODE -ne 0) { throw 'Cloud Run required environment verification failed.' }
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-workflows@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud run services add-iam-policy-binding ancv-marketing-backend --project=$ProjectId --region=$Region --member="serviceAccount:ancv-automation@$ProjectId.iam.gserviceaccount.com" --role='roles/run.invoker' --quiet | Out-Null
 & $gcloud workflows deploy ancv-health-check --source=infra/workflows/health-check.yaml --location=$Region --service-account="ancv-workflows@$ProjectId.iam.gserviceaccount.com" --project=$ProjectId

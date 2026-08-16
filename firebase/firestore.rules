@@ -17,7 +17,7 @@ service cloud.firestore {
     }
 
     match /{collectionName}/{documentId} {
-      allow read: if signedIn() && collectionName in [
+      allow read: if hasRole(['admin', 'editor', 'viewer']) && collectionName in [
         'contents', 'videoProjects', 'scenes', 'mediaAssets', 'publishingJobs', 'connectors',
         'connectorTests', 'socialMetrics', 'websiteMetrics', 'seoMetrics', 'reports',
         'workflowRuns', 'systemAlerts', 'systemSettings', 'aiJobs', 'aiUsage', 'auditLogs',

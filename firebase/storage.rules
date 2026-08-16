@@ -3,17 +3,19 @@ service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() { return request.auth != null; }
     function userDoc() { return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)); }
-    function editor() { return signedIn() && userDoc().data.status == 'active' && userDoc().data.role in ['admin', 'editor']; }
+    function hasRole(roles) { return signedIn() && userDoc().data.status == 'active' && userDoc().data.role in roles; }
+    function viewer() { return hasRole(['admin', 'editor', 'viewer']); }
+    function editor() { return hasRole(['admin', 'editor']); }
+    function admin() { return hasRole(['admin']); }
     match /content/{contentId}/{allPaths=**} {
-      allow read: if signedIn();
+      allow read: if viewer();
       allow create, update: if editor() && request.resource.size < 500 * 1024 * 1024;
-      allow delete: if signedIn() && userDoc().data.role == 'admin';
+      allow delete: if admin();
     }
     match /flow-errors/{jobId}/{allPaths=**} {
-      allow read: if signedIn();
+      allow read: if viewer();
       allow write: if false;
     }
     match /{allPaths=**} { allow read, write: if false; }
   }
 }
-

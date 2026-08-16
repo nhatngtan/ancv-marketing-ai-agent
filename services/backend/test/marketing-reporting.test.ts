@@ -41,8 +41,8 @@ describe('marketing reporting aggregation', () => {
     ];
     const result = buildMarketingDashboard({
       contents: records, scenes: [], assets: [],
-      publishingJobs: [{ id: 'yt', status: 'succeeded', completedAt: '2026-08-12T00:00:00.000Z' } as PublishingJobRecord],
-      flowJobs: [{ id: 'flow', status: 'needs_manual' } as never], localAgents: [], connectors: [], openAIStatus: 'available',
+      publishingJobs: [{ id: 'yt', contentDocId: 'video-done', status: 'succeeded', completedAt: '2026-08-12T00:00:00.000Z' } as PublishingJobRecord],
+      flowJobs: [{ id: 'flow', contentDocId: 'video-review', status: 'needs_manual' } as never], localAgents: [], connectors: [], openAIStatus: 'available',
     }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
     expect(result.content).toMatchObject({ awaitingApproval: 1, completed: 1 });
     expect(result.pending).toMatchObject({ flowNeedsManual: 1, localAgentOffline: true, awaitingApproval: 1 });
@@ -88,6 +88,35 @@ describe('marketing reporting aggregation', () => {
     }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
     expect(result.pending.localAgentOffline).toBe(true);
     expect(result.health.find((item) => item.key === 'local_agent')?.status).toBe('offline');
+  });
+
+  it('excludes archived and explicit TEST fixtures from operational workload and Today Actions', () => {
+    const legacyActive = content({ id: 'legacy-active', status: 'draft', testContent: undefined });
+    const archived = content({ id: 'archived', status: 'archived', dueDate: '2026-08-01' });
+    const statusTest = content({ id: 'status-test', status: 'test', dueDate: '2026-08-01' });
+    const flaggedTest = content({ id: 'flagged-test', status: 'draft', testContent: true, dueDate: '2026-08-01' });
+    const result = buildMarketingDashboard({
+      contents: [legacyActive, archived, statusTest, flaggedTest], scenes: [], assets: [], publishingJobs: [], flowJobs: [], localAgents: [], connectors: [],
+    }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
+    expect(result.content).toEqual({ total: 1, inProgress: 1, awaitingApproval: 0, readyToPublish: 0, completed: 0 });
+    expect(result.operations.work.map((item) => item.id)).toEqual(['legacy-active']);
+    expect(result.operations.today.map((item) => item.contentDocId)).toEqual(['legacy-active']);
+    expect(result.pipeline.map((item) => item.id)).toEqual(['legacy-active']);
+  });
+
+  it('returns operational counts to baseline after a fixture is soft archived', () => {
+    const baseline = content({ id: 'baseline', status: 'draft' });
+    const fixture = content({ id: 'fixture', status: 'review' });
+    const before = buildMarketingDashboard({
+      contents: [baseline, fixture], scenes: [], assets: [], publishingJobs: [], flowJobs: [], localAgents: [], connectors: [],
+    }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
+    const after = buildMarketingDashboard({
+      contents: [baseline, { ...fixture, status: 'archived' }], scenes: [], assets: [], publishingJobs: [], flowJobs: [], localAgents: [], connectors: [],
+    }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
+    expect(before.content).toMatchObject({ total: 2, awaitingApproval: 1 });
+    expect(after.content).toMatchObject({ total: 1, awaitingApproval: 0, completed: 0 });
+    expect(after.operations.work.map((item) => item.id)).toEqual(['baseline']);
+    expect(after.operations.today.every((item) => item.contentDocId !== 'fixture')).toBe(true);
   });
 });
 

@@ -31,6 +31,14 @@ const completedStatuses = new Set(['published', 'completed', 'archived']);
 const workingStatuses = new Set(['idea', 'draft', 'generating', 'in_production', 'post_production', 'awaiting_copy']);
 const socialPlatforms = new Set<Platform>(['facebook', 'tiktok', 'linkedin', 'zalo']);
 
+export function isOperationalContent(content: ContentRecord): boolean {
+  return content.status !== 'archived' && content.status !== 'test' && content.testContent !== true;
+}
+
+function isReportableContent(content: ContentRecord): boolean {
+  return content.status !== 'test' && content.testContent !== true;
+}
+
 export function isoDate(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const date = new Date(value);
@@ -130,9 +138,9 @@ function statusGroup(status: ContentStatus): MarketingWorkItem['statusGroup'] {
 
 export function deriveMarketingOperations(documents: Pick<ReportingDocuments, 'contents' | 'scenes' | 'assets' | 'flowJobs' | 'publishingJobs'>, now = new Date()): MarketingDashboardResponse['operations'] {
   const today = now.toISOString().slice(0, 10);
-  const pipelines = new Map(documents.contents.map((content) => [content.id, derivePipelineItem(content, documents.scenes, documents.assets)]));
-  const work: MarketingWorkItem[] = documents.contents
-    .filter((content) => content.status !== 'test')
+  const operationalContents = documents.contents.filter(isOperationalContent);
+  const pipelines = new Map(operationalContents.map((content) => [content.id, derivePipelineItem(content, documents.scenes, documents.assets)]));
+  const work: MarketingWorkItem[] = operationalContents
     .map((content) => {
       const pipeline = pipelines.get(content.id)!;
       const action = quickAction(content, pipeline);
@@ -148,8 +156,8 @@ export function deriveMarketingOperations(documents: Pick<ReportingDocuments, 'c
     .sort((left, right) => Number(right.priority === 'high') - Number(left.priority === 'high') || Number(right.overdue) - Number(left.overdue) || right.updatedAt.localeCompare(left.updatedAt));
 
   const actions: MarketingTodayAction[] = [];
-  for (const content of documents.contents) {
-    if (completedStatuses.has(content.status) || content.status === 'test') continue;
+  for (const content of operationalContents) {
+    if (completedStatuses.has(content.status)) continue;
     const pipeline = pipelines.get(content.id)!;
     const assets = documents.assets.filter((asset) => asset.contentDocId === content.id);
     const flowNeedsManual = documents.flowJobs.some((job) => job.contentDocId === content.id && job.status === 'needs_manual');
@@ -338,26 +346,30 @@ export function buildMarketingDashboard(
   now = new Date(),
 ): MarketingDashboardResponse {
   const month = now.toISOString().slice(0, 7);
-  const entries = publishedPlatformEntries(documents.contents);
+  const operationalContents = documents.contents.filter(isOperationalContent);
+  const operationalContentIds = new Set(operationalContents.map((content) => content.id));
+  const reportableContents = documents.contents.filter(isReportableContent);
+  const entries = publishedPlatformEntries(operationalContents);
+  const reportEntries = publishedPlatformEntries(reportableContents);
   const byPlatform: Partial<Record<Platform, number>> = {};
   for (const { publication } of entries) byPlatform[publication.platform] = (byPlatform[publication.platform] ?? 0) + 1;
-  const contentInRange = documents.contents.filter((content) => inDateRange(content.updatedAt, from, to));
+  const contentInRange = reportableContents.filter((content) => inDateRange(content.updatedAt, from, to));
   const completedInRange = contentInRange.filter((content) => completedStatuses.has(content.status));
   const agent = documents.localAgents.find((item) => item.id === 'ancv-windows-01') ?? documents.localAgents[0];
   const agentOnline = Boolean(agent?.status === 'online' && now.getTime() - new Date(isoDate(agent.lastSeen) ?? 0).getTime() < 45_000);
-  const flowNeedsManual = documents.flowJobs.filter((job) => job.status === 'needs_manual').length;
-  const publishingErrors = documents.publishingJobs.filter((job) => job.status === 'needs_manual').length;
+  const flowNeedsManual = documents.flowJobs.filter((job) => operationalContentIds.has(job.contentDocId) && job.status === 'needs_manual').length;
+  const publishingErrors = documents.publishingJobs.filter((job) => operationalContentIds.has(job.contentDocId) && job.status === 'needs_manual').length;
   const connector = (platform: Platform) => documents.connectors.find((item) => item.platform === platform);
   const ga4Connected = connector('ga4')?.status === 'available';
   const gscConnected = connector('search_console')?.status === 'available';
   const wordpressConnected = ['available', 'partially_available'].includes(connector('website')?.status ?? '');
-  const reportPublications = entries.filter(({ publication }) => inDateRange(publication.publishedAt, from, to));
-  const pipeline = documents.contents
+  const reportPublications = reportEntries.filter(({ publication }) => inDateRange(publication.publishedAt, from, to));
+  const pipeline = operationalContents
     .map((content) => derivePipelineItem(content, documents.scenes, documents.assets))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const youtubePublishedThisMonth = documents.publishingJobs.filter((job) => job.status === 'succeeded' && inMonth(job.completedAt, month)).length;
+  const youtubePublishedThisMonth = documents.publishingJobs.filter((job) => operationalContentIds.has(job.contentDocId) && job.status === 'succeeded' && inMonth(job.completedAt, month)).length;
   const socialPublishedThisMonth = entries.filter(({ publication }) => socialPlatforms.has(publication.platform) && inMonth(publication.publishedAt, month)).length;
-  const websiteArticlesThisMonth = documents.contents.filter((content) => content.type === 'article' && (
+  const websiteArticlesThisMonth = operationalContents.filter((content) => content.type === 'article' && (
     inMonth(content.wordpressDraft?.createdAt, month)
     || (content.platforms ?? []).some((item) => item.platform === 'website' && item.status === 'published' && inMonth(item.publishedAt, month))
   )).length;
@@ -369,14 +381,14 @@ export function buildMarketingDashboard(
     generatedAt: now.toISOString(),
     range: { from, to },
     content: {
-      total: documents.contents.length,
-      inProgress: documents.contents.filter((content) => workingStatuses.has(content.status)).length,
-      awaitingApproval: documents.contents.filter((content) => content.status === 'review').length,
-      readyToPublish: documents.contents.filter((content) => ['approved', 'ready_to_publish', 'scheduled'].includes(content.status)).length,
-      completed: documents.contents.filter((content) => completedStatuses.has(content.status)).length,
+      total: operationalContents.length,
+      inProgress: operationalContents.filter((content) => workingStatuses.has(content.status)).length,
+      awaitingApproval: operationalContents.filter((content) => content.status === 'review').length,
+      readyToPublish: operationalContents.filter((content) => ['approved', 'ready_to_publish', 'scheduled'].includes(content.status)).length,
+      completed: operationalContents.filter((content) => completedStatuses.has(content.status)).length,
     },
     month: {
-      videos: documents.contents.filter((content) => content.type === 'video' && inMonth(content.createdAt, month)).length,
+      videos: operationalContents.filter((content) => content.type === 'video' && inMonth(content.createdAt, month)).length,
       websiteArticles: websiteArticlesThisMonth,
       youtubePublished: youtubePublishedThisMonth,
       socialPublished: socialPublishedThisMonth,
@@ -385,7 +397,7 @@ export function buildMarketingDashboard(
       flowNeedsManual,
       publishingErrors,
       localAgentOffline: !agentOnline,
-      awaitingApproval: documents.contents.filter((content) => content.status === 'review').length,
+      awaitingApproval: operationalContents.filter((content) => content.status === 'review').length,
     },
     publishing: { total: entries.length, byPlatform },
     pipeline,
