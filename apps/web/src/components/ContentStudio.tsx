@@ -1745,7 +1745,7 @@ function ArticleDistributionPanel({ content, assets, busy, act }: { content: Con
   const articleApproved = Boolean(content.approvedAt);
   const socialApproved = socialPlatforms.every((platform) => content.platformCopies?.[platform]?.status === "approved");
   const wordpressCreated = content.wordpressDraft?.status === "draft";
-  const wordpressAuditFixture = content.testContent === true || content.title === "AUDIT-ARTICLE-E2E";
+  const wordpressAuditFixture = content.testContent === true;
   const wordpressReady = articleApproved && quality.checks.every((item) => item.passed) && Boolean(selectedImage?.altText) && wordpressAuditFixture;
   return <section className="publishing-panel article-distribution-panel">
     <div className="section-title"><div><span className="step-label">Phân phối</span><h3>Website & mạng xã hội</h3><small>Website là Article canonical. WordPress luôn tạo bản nháp trước khi người dùng kiểm tra.</small></div></div>

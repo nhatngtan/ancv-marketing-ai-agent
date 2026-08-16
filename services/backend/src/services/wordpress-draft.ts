@@ -137,8 +137,7 @@ export async function createWordPressDraftUat(contentDocId: string, uid: string)
   const contentSnapshot = await db().collection('contents').doc(contentDocId).get();
   if (!contentSnapshot.exists) throw httpError('CONTENT_NOT_FOUND', 404);
   const content = { id: contentSnapshot.id, ...contentSnapshot.data() } as ContentRecord;
-  const isAuditFixture = content.testContent === true || content.title === 'AUDIT-ARTICLE-E2E';
-  if (!isAuditFixture) throw httpError('WORDPRESS_UAT_FIXTURE_ONLY', 409);
+  if (!content.testContent) throw httpError('WORDPRESS_UAT_FIXTURE_ONLY', 409);
   if (!content.selectedImageId) throw httpError('WORDPRESS_FEATURED_IMAGE_REQUIRED', 409);
   const assetSnapshot = await db().collection('mediaAssets').doc(content.selectedImageId).get();
   if (!assetSnapshot.exists) throw httpError('WORDPRESS_FEATURED_IMAGE_NOT_FOUND', 409);
