@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { ContentManagementSettings, ContentRecord, LocalAgentRecord } from '@ancv/shared';
 import { ChannelConfigModal, ContentManagementPage } from './components/ContentManagement';
 import { channelStatusForContent } from './lib/content-management';
@@ -38,10 +40,16 @@ describe('ContentManagementPage', () => {
   it('shows production-shaped rows, searches/filters and opens the existing Content detail', async () => {
     const onOpen = vi.fn();
     render(<ContentManagementPage contents={[video, article]} localAgents={[onlineAgent]} onOpenContent={onOpen} onToast={vi.fn()} loadSettings={async () => settings}/>);
-    await screen.findByRole('columnheader', { name: 'YouTube' });
+    await screen.findByRole('columnheader', { name: 'Kênh' });
     const table = screen.getByRole('table');
-    expect(within(table).getByText('ANCV-VID-2026-001')).not.toBeNull();
+    expect(within(table).queryByRole('columnheader', { name: 'YouTube' })).toBeNull();
+    expect(within(table).getAllByText('ANCV-VID-2026-001').length).toBeGreaterThan(0);
     expect(within(table).getAllByText('Đã lên lịch').length).toBeGreaterThan(0);
+    expect(within(table).getAllByText('YouTube').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Tổng hợp Content')).not.toBeNull();
+    const css = readFileSync(resolve(process.cwd(), 'src/ancv-brand.css'), 'utf8');
+    expect(css).toContain('overflow-x: hidden');
+    expect(css).toContain('@media (max-width: 1100px) and (min-width: 761px)');
     fireEvent.click(within(table).getByRole('button', { name: 'Video bảo vệ nhà máy' }));
     expect(onOpen).toHaveBeenCalledWith(video);
     fireEvent.change(screen.getByLabelText('Tìm Content'), { target: { value: 'ANCV-ART-2026-001' } });

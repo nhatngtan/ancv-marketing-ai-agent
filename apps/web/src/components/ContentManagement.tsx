@@ -18,7 +18,7 @@ const defaultSettings: ContentManagementSettings = { enabledChannels: [...CONTEN
 
 function ChannelStatus({ value }: { value: SimpleChannelStatus }) {
   const labels: Record<SimpleChannelStatus, string> = { none: '—', pending: 'Chưa đăng', scheduled: 'Đã lên lịch', published: 'Đã đăng' };
-  return <span className={`simple-channel-status ${value}`}><i/>{labels[value]}</span>;
+  return <span className={`channel-status-value ${value}`}>{labels[value]}</span>;
 }
 
 interface ContentManagementProps {
@@ -69,6 +69,12 @@ export function ContentManagementPage({
     });
   }, [contents, query, statusFilter, typeFilter]);
   const statuses = useMemo(() => [...new Set(contents.map((item) => item.status))], [contents]);
+  const summary = useMemo(() => ({
+    total: contents.length,
+    working: contents.filter((item) => ['idea', 'draft', 'generating', 'in_production', 'post_production', 'awaiting_copy', 'review'].includes(item.status)).length,
+    ready: contents.filter((item) => ['approved', 'ready_to_publish', 'scheduled'].includes(item.status)).length,
+    published: contents.filter((item) => ['partially_published', 'published', 'completed'].includes(item.status)).length,
+  }), [contents]);
   const agent = localAgents.find((item) => item.id === 'ancv-windows-01') ?? localAgents[0];
   const agentOnline = Boolean(clockMs && agent?.status === 'online' && agent.workspaceAvailable && clockMs - Date.parse(agent.lastSeen) < 45_000);
 
@@ -82,6 +88,12 @@ export function ContentManagementPage({
 
   return <>
     <div className="page-heading content-management-heading"><div><span className="eyebrow">CONTENT OPERATIONS</span><h1>Quản lý nội dung</h1><p>Mỗi hàng là một Content. Trạng thái được lấy tự động từ quy trình hiện có.</p></div><button className="secondary" onClick={() => setShowSettings(true)}><Settings2 size={16}/>Cấu hình kênh</button></div>
+    <div className="management-summary" aria-label="Tổng hợp Content">
+      <div><span>Tổng nội dung</span><strong>{summary.total}</strong></div>
+      <div className="working"><span>Đang làm</span><strong>{summary.working}</strong></div>
+      <div className="ready"><span>Sẵn sàng đăng</span><strong>{summary.ready}</strong></div>
+      <div className="published"><span>Đã đăng</span><strong>{summary.published}</strong></div>
+    </div>
     <section className="panel content-management-panel">
       <div className="content-management-toolbar">
         <label className="management-search"><Search size={16}/><span className="sr-only">Tìm Content</span><input aria-label="Tìm Content" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm theo tên hoặc mã Content"/></label>
@@ -90,15 +102,15 @@ export function ContentManagementPage({
       </div>
       <div className="management-table-wrap">
         <table className="management-table">
-          <thead><tr><th>Mã</th><th>Nội dung</th><th>Loại</th><th>Tình trạng</th>{visibleChannels.map((channel) => <th key={channel.id}>{channel.name}</th>)}<th>Thư mục</th><th>Cập nhật</th></tr></thead>
+          <thead><tr><th className="management-code-column">Mã</th><th className="management-title-column">Nội dung</th><th className="management-type-column">Loại</th><th className="management-status-column">Tình trạng</th><th className="management-channel-column">Kênh</th><th className="management-folder-column">Thư mục</th><th className="management-updated-column">Cập nhật</th></tr></thead>
           <tbody>{filtered.map((content) => <tr key={content.id}>
-            <td><span className="content-code">{content.contentId}</span></td>
-            <td><button className="content-name-button" onClick={() => onOpenContent(content)}>{content.title}</button></td>
-            <td><Badge tone={content.type === 'video' ? 'info' : 'neutral'}>{content.type === 'video' ? 'Video' : 'Bài viết'}</Badge></td>
-            <td><Badge tone={['published','completed'].includes(content.status) ? 'success' : ['review','post_production'].includes(content.status) ? 'warning' : 'info'}>{managementContentStatusLabel(content.status)}</Badge></td>
-            {visibleChannels.map((channel) => <td key={channel.id}><ChannelStatus value={channelStatusForContent(content, channel.id)}/></td>)}
-            <td><button className="folder-button" disabled={openingId === content.id} onClick={() => openProjectFolder(content)}><FolderOpen size={14}/>{openingId === content.id ? 'Đang mở…' : 'Mở thư mục'}</button></td>
-            <td><span className="updated-cell">{new Date(content.updatedAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</span></td>
+            <td className="management-code-column"><span className="content-code">{content.contentId}</span></td>
+            <td className="management-title-column"><button className="content-name-button" onClick={() => onOpenContent(content)}>{content.title}</button><span className="content-code-mobile">{content.contentId}</span></td>
+            <td className="management-type-column"><Badge tone={content.type === 'video' ? 'info' : 'neutral'}>{content.type === 'video' ? 'Video' : 'Bài viết'}</Badge></td>
+            <td className="management-status-column"><Badge tone={['published','completed'].includes(content.status) ? 'success' : ['review','post_production','scheduled'].includes(content.status) ? 'warning' : 'info'}>{managementContentStatusLabel(content.status)}</Badge></td>
+            <td className="management-channel-column"><div className="channel-status-list">{visibleChannels.map((channel) => <span className={`channel-status-chip ${channelStatusForContent(content, channel.id)}`} key={channel.id}><b>{channel.name}</b><ChannelStatus value={channelStatusForContent(content, channel.id)}/></span>)}</div></td>
+            <td className="management-folder-column"><button className="folder-button" aria-label={openingId === content.id ? 'Đang mở thư mục' : 'Mở thư mục'} disabled={openingId === content.id} onClick={() => openProjectFolder(content)}><FolderOpen size={14}/><span>{openingId === content.id ? 'Đang mở…' : 'Mở thư mục'}</span></button></td>
+            <td className="management-updated-column"><span className="updated-cell">{new Date(content.updatedAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</span></td>
           </tr>)}</tbody>
         </table>
         {filtered.length === 0 && <div className="management-empty">Không tìm thấy Content phù hợp.</div>}

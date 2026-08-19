@@ -2,6 +2,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ContentRecord, FlowJobRecord, MediaAssetRecord, SceneRecord } from "@ancv/shared";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const fixtures = vi.hoisted(() => {
   const now = "2026-08-14T09:48:46.000Z";
@@ -139,6 +141,17 @@ describe("Video Raw local-first UAT", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /ANCV PHASE 3 FLOW E2E/ }));
+    const studio = screen.getByRole("dialog", { name: "ANCV PHASE 3 FLOW E2E" });
+    expect(studio.classList.contains("video-studio-modal")).toBe(true);
+    expect(screen.getByRole("button", { name: /Kịch bản/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Tạo video/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Hoàn tất/ })).toBeTruthy();
+    expect(screen.getByText("Cài đặt nâng cao").closest("details")?.hasAttribute("open")).toBe(false);
+    const css = readFileSync(resolve(process.cwd(), "src/ancv-brand.css"), "utf8");
+    expect(css).toContain("width: 90vw");
+    expect(css).toContain("max-width: 1400px");
+    expect(css).toContain("height: 90vh");
+    expect(css).toContain("width: calc(100vw - 16px)");
     fireEvent.click(screen.getByRole("button", { name: /Tạo video/ }));
 
     expect(await screen.findByText("Scene 01 — Take 01")).toBeTruthy();

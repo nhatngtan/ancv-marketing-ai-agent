@@ -358,18 +358,23 @@ function StudioDrawer({
   return (
     <>
       <button className="drawer-scrim" onClick={onClose} aria-label="Đóng" />
-      <aside className="drawer studio-drawer">
+      <aside
+        className={`drawer studio-drawer ${content.type === "video" ? "video-studio-modal" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`studio-title-${content.id}`}
+      >
         <div className="drawer-head">
           <div>
             <span className="eyebrow">{content.contentId}</span>
-            <h2>{content.title}</h2>
+            <h2 id={`studio-title-${content.id}`}>{content.title}</h2>
             <Badge
               tone={content.status === "ready_to_publish" ? "success" : "info"}
             >
               {statusLabels[content.status] ?? content.status}
             </Badge>
           </div>
-          <button onClick={onClose}>
+          <button onClick={onClose} aria-label="Đóng Content">
             <X />
           </button>
         </div>
