@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { BROWSER_PLATFORMS, type BrowserPlatform, type BrowserProfileMapping, type BrowserProfileSettings, type ChromeProfileMetadata, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type SceneRecord } from '@ancv/shared';
+import { BROWSER_PLATFORMS, type BrowserPlatform, type BrowserProfileMapping, type BrowserProfileSettings, type ChromeProfileMetadata, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type MediaAssetRecord, type SceneRecord } from '@ancv/shared';
 import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
 import { db } from '../firebase.js';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -26,6 +26,11 @@ const openVideoFolderSchema = z.object({
 });
 const registerVideoFinalSchema = openVideoFolderSchema.extend({
   relativePath: z.string().min(1).max(1_000),
+});
+const openMediaSchema = z.object({
+  contentDocId: z.string().min(1).max(200),
+  assetId: z.string().min(1).max(200),
+  agentId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/).default('ancv-windows-01'),
 });
 const chromeProfileIdSchema = z.string().regex(/^(?:Default|Profile(?: \d+)?)$/);
 const browserMappingSchema = z.object({
@@ -222,6 +227,20 @@ flowRouter.post('/local-commands/open-video-folder', requireFirebaseEditor, asyn
     if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId)) throw Object.assign(new Error('LOCAL_FOLDER_METADATA_INVALID'), { statusCode: 409 });
     const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
     const command = { id: ref.id, agentId: input.agentId, command: 'open_folder' as const, relativePath: `Projects/${contentId}`, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
+    await ref.set(command); response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/local-commands/open-media', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = openMediaSchema.parse(request.body);
+    if (!await localAgentOnline(input.agentId)) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
+    const snapshot = await db().collection('mediaAssets').doc(input.assetId).get();
+    if (!snapshot.exists) throw Object.assign(new Error('MEDIA_ASSET_NOT_FOUND'), { statusCode: 404 });
+    const asset = { id: snapshot.id, ...snapshot.data() } as MediaAssetRecord;
+    if (asset.contentDocId !== input.contentDocId || asset.storageType !== 'local' || !asset.relativePath) throw Object.assign(new Error('LOCAL_MEDIA_REQUIRED'), { statusCode: 409 });
+    const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
+    const command = { id: ref.id, agentId: input.agentId, command: 'open_file' as const, relativePath: asset.relativePath, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
     await ref.set(command); response.status(201).json({ command });
   } catch (error) { next(error); }
 });

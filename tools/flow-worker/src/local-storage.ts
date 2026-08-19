@@ -24,6 +24,48 @@ export function localFinalFolderRelativePath(contentId: string): string {
   return `Projects/${contentId}/Video Final`;
 }
 
+export interface LocalFinalObservation {
+  relativePath: string;
+  sizeBytes: number;
+  modifiedAtMs: number;
+}
+
+export class LocalFinalStabilityTracker {
+  private readonly samples = new Map<string, { sizeBytes: number; modifiedAtMs: number; stableSince: number }>();
+
+  constructor(private readonly stableForMs = 10_000) {}
+
+  observe(observations: LocalFinalObservation[], now = Date.now()): string[] {
+    const present = new Set(observations.map((item) => item.relativePath));
+    for (const path of this.samples.keys()) if (!present.has(path)) this.samples.delete(path);
+    const stable: string[] = [];
+    for (const observation of observations) {
+      const previous = this.samples.get(observation.relativePath);
+      if (!previous || previous.sizeBytes !== observation.sizeBytes || previous.modifiedAtMs !== observation.modifiedAtMs) {
+        this.samples.set(observation.relativePath, { ...observation, stableSince: now });
+        continue;
+      }
+      if (now - previous.stableSince >= this.stableForMs) stable.push(observation.relativePath);
+    }
+    return stable.sort((left, right) => left.localeCompare(right));
+  }
+}
+
+export class LocalFinalStabilityRegistry {
+  private readonly trackers = new Map<string, LocalFinalStabilityTracker>();
+
+  constructor(private readonly stableForMs = 10_000) {}
+
+  observe(contentId: string, observations: LocalFinalObservation[], now = Date.now()): string[] {
+    let tracker = this.trackers.get(contentId);
+    if (!tracker) {
+      tracker = new LocalFinalStabilityTracker(this.stableForMs);
+      this.trackers.set(contentId, tracker);
+    }
+    return tracker.observe(observations, now);
+  }
+}
+
 export function assertLocalFinalRelativePath(contentId: string, relativePath: string): string {
   const normalized = relativePath.replaceAll('\\', '/').replace(/^\/+/, '');
   const prefix = `${localFinalFolderRelativePath(contentId)}/`;
@@ -50,13 +92,42 @@ export async function inspectLocalFinalCandidate(contentId: string, relativePath
       await handle.close();
     }
   }
+  const checksumSha256 = await sha256(filePath);
+  const afterHash = await stat(filePath);
+  if (afterHash.size !== details.size || afterHash.mtimeMs !== details.mtimeMs) throw new Error('LOCAL_FINAL_FILE_CHANGED');
   return {
     relativePath: normalized,
     fileName: normalized.split('/').at(-1) ?? 'video-final',
     sizeBytes: details.size,
     contentType: finalContentTypes[extension] ?? 'application/octet-stream',
-    checksumSha256: await sha256(filePath),
+    checksumSha256,
   };
+}
+
+export async function observeLocalFinalFiles(contentId: string): Promise<LocalFinalObservation[]> {
+  const config = loadLocalAgentConfig();
+  const relativeFolder = localFinalFolderRelativePath(contentId);
+  const folder = pathInsideWorkspace(config, relativeFolder);
+  await mkdir(folder, { recursive: true });
+  const entries = await readdir(folder, { withFileTypes: true });
+  const observations: LocalFinalObservation[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isFile() || !finalContentTypes[extname(entry.name).toLowerCase()]) continue;
+    const relativePath = `${relativeFolder}/${entry.name}`;
+    const filePath = pathInsideWorkspace(config, relativePath);
+    const details = await stat(filePath);
+    if (details.size < 1_024) continue;
+    if (extname(entry.name).toLowerCase() === '.mp4') {
+      const handle = await open(filePath, 'r');
+      try {
+        const header = Buffer.alloc(12);
+        await handle.read(header, 0, header.length, 0);
+        if (header.subarray(4, 8).toString('ascii') !== 'ftyp') continue;
+      } finally { await handle.close(); }
+    }
+    observations.push({ relativePath, sizeBytes: details.size, modifiedAtMs: details.mtimeMs });
+  }
+  return observations;
 }
 
 export async function scanLocalFinalCandidates(contentId: string): Promise<LocalFinalCandidate[]> {
@@ -129,6 +200,7 @@ export async function registerLocalFinalVideo(input: {
   batch.update(firestore.collection('contents').doc(input.contentDocId), {
     finalVideoAssetId: assetId,
     status: 'awaiting_copy',
+    finalDetection: { status: 'ready', candidates: [candidate], checkedAt: now },
     updatedAt: now,
   });
   await batch.commit();

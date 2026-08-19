@@ -17,7 +17,7 @@ const response: MarketingDashboardResponse = {
   youtube: { status: 'unavailable', auth: 'unavailable', topVideos: [], message: 'upstream unavailable' },
   analytics: { ga4: { status: 'not_connected', label: 'Chưa kết nối thuộc tính' }, searchConsole: { status: 'not_connected', label: 'Chưa kết nối thuộc tính' } },
   health: [{ key: 'local_agent', label: 'Local Agent', status: 'operational', detail: 'Online' }],
-  report: { completedVideos: 1, completedArticles: 0, publishedPosts: 1, pendingContents: 2, availableSources: ['Firestore'], missingSources: ['YouTube', 'GA4', 'Search Console'] },
+  report: { completedVideos: 1, completedArticles: 0, publishedPosts: 1, pendingContents: 2, availableSources: ['Firestore'], missingSources: ['YouTube', 'GA4', 'Search Console'], priorities: [] },
 };
 
 vi.mock('./lib/repository', () => ({ fetchMarketingDashboard: vi.fn(async () => response), archiveContent: vi.fn(), completeContent: vi.fn(), openVideoFolder: vi.fn() }));

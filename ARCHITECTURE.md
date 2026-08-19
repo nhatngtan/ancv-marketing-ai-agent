@@ -36,7 +36,7 @@ Backend dùng Firestore transaction trên `systemCounters/{type}-{year}` để s
 
 - `contents`: nguồn sự thật của Video/Article, MASTER SCRIPT, Article Draft, visual continuity, platform copies và approval state.
 - `scenes`: scene có cấu trúc, độc lập để thêm/xóa/duplicate/reorder/regenerate một scene.
-- `mediaAssets`: Video Raw takes, Video Final và ảnh Article; binary nằm ở Cloud Storage.
+- `mediaAssets`: Video Raw takes, Video Final và ảnh Article. Video Raw/Final mặc định local-first với đường dẫn tương đối; ảnh Article dùng Cloud Storage.
 - `aiJobs`: idempotency và trạng thái `queued/processing/succeeded/failed`; tối đa một application attempt cho cùng request ID.
 - `aiUsage`: operation, model, request ID và token/image usage để tổng hợp theo tháng.
 - `auditLogs`: generate/regenerate/approve/upload/manual publish với actor và timestamp.
@@ -44,6 +44,8 @@ Backend dùng Firestore transaction trên `systemCounters/{type}-{year}` để s
 
 AI endpoints yêu cầu Firebase `admin/editor`. Structured output được OpenAI ràng buộc JSON Schema và backend tiếp tục validate bằng Zod trước khi ghi production collections. Image bytes được upload vào Storage ngay; ứng dụng không phụ thuộc URL tạm của provider.
 
-`MASTER SCRIPT external → AI processing → Human edit/review → Human approval → Ready for distribution`. Không endpoint Giai đoạn 2B nào tự publish social/WordPress.
+`MASTER SCRIPT external → AI processing → Human edit/review → Human approval → Ready for distribution`. YouTube/WordPress chỉ ghi khi người dùng chủ động xác nhận **Đăng / Lên lịch**. Facebook/TikTok/Zalo/LinkedIn chỉ dùng Manual Social Handoff.
 
 Flow runtime experimental theo local-first: Web App tạo `flowJobs` trong Firestore → ANCV Local Agent trên Windows → ANCV Browser Bridge loopback → dedicated Chrome profile → Google Flow → local workspace. Firestore chỉ giữ metadata/state; Video Raw mặc định không upload Cloud. Playwright CDP Worker V1 vẫn được giữ làm fallback riêng. Cả hai đều generate tối đa một lần và degrade về Copy Prompt + upload thủ công.
+
+Local Agent cũng theo dõi độc lập thư mục `Video Final` của từng Content. File chỉ được đăng ký sau khi kích thước và thời điểm sửa ổn định; một file hợp lệ được tự chọn, nhiều file được đưa về lựa chọn thủ công. Asset dùng checksum + Content ID để không tạo duplicate và không upload Firebase Storage.

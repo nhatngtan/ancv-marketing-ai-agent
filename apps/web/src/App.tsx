@@ -37,7 +37,7 @@ const platformLabels: Record<Platform, string> = {
   website: 'Website', ga4: 'GA4', search_console: 'Search Console',
 };
 const publishLabels: Record<PublishingStatus, string> = {
-  pending: 'Chờ xử lý', processing: 'Đang xử lý', published: 'Đã đăng', needs_action: 'Cần xử lý',
+  pending: 'Chờ xử lý', processing: 'Đang xử lý', scheduled: 'Đã lên lịch', published: 'Đã đăng', needs_action: 'Cần xử lý',
   manual_pending: 'Chờ đăng thủ công', failed: 'Thất bại', skipped: 'Bỏ qua',
 };
 function capabilityLabel(value: string) {

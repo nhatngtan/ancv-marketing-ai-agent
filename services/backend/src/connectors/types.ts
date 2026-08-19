@@ -16,7 +16,7 @@ export interface PublishInput {
   mediaUrls: string[];
   scheduledAt?: string;
   stagingPath?: string;
-  privacyStatus?: 'private';
+  privacyStatus?: 'private' | 'public';
 }
 
 export interface PublishResult {
@@ -25,7 +25,8 @@ export interface PublishResult {
   platformPostId?: string;
   postUrl?: string;
   channelId?: string;
-  privacyStatus?: 'private';
+  privacyStatus?: 'private' | 'public';
+  scheduledAt?: string;
   errorCode?: string;
   message: string;
 }

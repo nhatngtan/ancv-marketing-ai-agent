@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { discoverWritableYoastFields, markdownArticleToHtml } from '../src/services/wordpress-draft.js';
+import { discoverWritableYoastFields, markdownArticleToHtml, wordpressPublishJobId, wordpressPublishPayload } from '../src/services/wordpress-draft.js';
 
 describe('WordPress draft payload safety', () => {
   it('converts canonical markdown and embeds the idempotency marker safely', () => {
@@ -19,5 +19,15 @@ describe('WordPress draft payload safety', () => {
   it('maps Yoast metadata only when both registered write fields are advertised', () => {
     const root = { routes: { '/wp/v2/posts': { endpoints: [{ methods: ['POST'], args: { meta: { properties: { _yoast_wpseo_title: {}, _yoast_wpseo_metadesc: {} } } } }] } } };
     expect(discoverWritableYoastFields(root)).toEqual({ titleField: '_yoast_wpseo_title', descriptionField: '_yoast_wpseo_metadesc' });
+  });
+
+  it('publishes an existing draft now without exposing technical options', () => {
+    expect(wordpressPublishPayload('now')).toEqual({ status: 'publish' });
+  });
+
+  it('schedules an existing draft with one deterministic job per Article', () => {
+    expect(wordpressPublishJobId('article-1')).toBe('wordpress-publish-article-1');
+    expect(wordpressPublishJobId('article-1')).toBe(wordpressPublishJobId('article-1'));
+    expect(wordpressPublishPayload('schedule', '2099-08-20T03:00:00.000Z')).toEqual({ status: 'future', date_gmt: '2099-08-20T03:00:00' });
   });
 });

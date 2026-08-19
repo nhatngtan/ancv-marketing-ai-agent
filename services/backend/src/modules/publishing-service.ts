@@ -14,13 +14,13 @@ import { getPublishingProvider } from '../connectors/registry.js';
 import { decideRetry } from '../services/retry-policy.js';
 import { requireAutomationIdentity, requireFirebaseEditor } from '../middleware/auth.js';
 import { config } from '../config.js';
-import { createWordPressDraftUat } from '../services/wordpress-draft.js';
+import { createWordPressDraft, publishWordPressContent } from '../services/wordpress-draft.js';
 
 export const publishingRouter = Router();
 
 publishingRouter.post('/wordpress/:contentId/draft', requireFirebaseEditor, async (request, response, next) => {
   try {
-    const result = await createWordPressDraftUat(String(request.params.contentId), response.locals.identity.uid);
+    const result = await createWordPressDraft(String(request.params.contentId), response.locals.identity.uid);
     response.status(result.idempotentReplay ? 200 : 201).json(result);
   } catch (error) { next(error); }
 });
@@ -35,6 +35,16 @@ const manualSchema = z.object({
 const youtubeStartSchema = z.object({
   confirmPrivate: z.literal(true),
   idempotencyKey: z.string().uuid(),
+});
+const publishActionSchema = z.object({
+  mode: z.enum(['now', 'schedule']),
+  scheduledAt: z.iso.datetime().optional(),
+  confirmed: z.literal(true),
+  idempotencyKey: z.string().uuid(),
+}).superRefine((value, context) => {
+  if (value.mode === 'schedule' && !value.scheduledAt) context.addIssue({ code: 'custom', path: ['scheduledAt'], message: 'Cần ngày giờ lên lịch.' });
+  if (value.mode === 'now' && value.scheduledAt) context.addIssue({ code: 'custom', path: ['scheduledAt'], message: 'Đăng ngay không nhận ngày giờ.' });
+  if (value.scheduledAt && Date.parse(value.scheduledAt) < Date.now() + 5 * 60_000) context.addIssue({ code: 'custom', path: ['scheduledAt'], message: 'Thời gian lên lịch phải cách hiện tại ít nhất 5 phút.' });
 });
 
 export function youtubeJobId(contentDocId: string): string {
@@ -82,63 +92,80 @@ export function assertYouTubePublishEligibility(content: ContentRecord, asset: M
   }
   const copy = content.platformCopies?.youtube;
   if (!copy || copy.status !== 'approved') throw httpError('YOUTUBE_COPY_APPROVAL_REQUIRED', 409);
-  if (!content.approvedAt || !['approved', 'ready_to_publish', 'partially_published', 'published'].includes(content.status)) {
+  if (!content.approvedAt || !['approved', 'ready_to_publish', 'scheduled', 'partially_published', 'published'].includes(content.status)) {
     throw httpError('YOUTUBE_CONTENT_APPROVAL_REQUIRED', 409);
   }
+}
+
+async function startYouTubeJob(input: {
+  contentDocId: string;
+  uid: string;
+  idempotencyKey: string;
+  operation: 'private_test' | 'publish_now' | 'schedule';
+  privacyStatus: 'private' | 'public';
+  scheduledAt?: string;
+}) {
+  const { content, asset } = await loadYouTubePublishInput(input.contentDocId);
+  if (config.youtubeChannelId !== 'UCy-H7__UvdWcTbUax3RGDcA') throw httpError('YOUTUBE_CHANNEL_CONFIGURATION_MISMATCH', 409);
+  const jobId = youtubeJobId(content.id);
+  const jobRef = db().collection('publishingJobs').doc(jobId);
+  const existing = await jobRef.get();
+  if (existing.exists) return { job: existing.data() as PublishingJobRecord, idempotentReplay: true };
+  const now = new Date().toISOString();
+  const extension = asset.fileName.toLowerCase().match(/\.(mp4|mov|m4v|webm)$/)?.[0] ?? '.mp4';
+  const stagingPath = `publishing-staging/youtube/${jobId}/${asset.checksumSha256?.slice(0, 24) ?? asset.id}${extension}`;
+  const commandRef = db().collection('localCommands').doc();
+  const job: PublishingJobRecord = {
+    id: jobId, platform: 'youtube', contentDocId: content.id, contentId: content.contentId,
+    assetId: asset.id, idempotencyKey: input.idempotencyKey, privacyStatus: input.privacyStatus,
+    operation: input.operation, ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
+    status: 'staging', stagingPath, stagingCleanup: 'pending', error: null,
+    createdAt: now, updatedAt: now, createdBy: input.uid,
+  };
+  const batch = db().batch();
+  batch.create(jobRef, job);
+  batch.create(commandRef, {
+    id: commandRef.id, agentId: 'ancv-windows-01', command: 'stage_youtube_final', status: 'queued',
+    contentDocId: content.id, contentId: content.contentId, relativePath: asset.relativePath,
+    publishingJobId: jobId, stagingPath, createdAt: now, updatedAt: now, createdBy: input.uid, error: null,
+  });
+  try {
+    await batch.commit();
+  } catch (error) {
+    const concurrent = await jobRef.get();
+    if (concurrent.exists) return { job: concurrent.data() as PublishingJobRecord, idempotentReplay: true };
+    throw error;
+  }
+  return { job, commandId: commandRef.id, idempotentReplay: false };
 }
 
 publishingRouter.post('/youtube/:contentId/private', requireFirebaseEditor, async (request, response, next) => {
   try {
     const input = youtubeStartSchema.parse(request.body);
-    const { content, asset } = await loadYouTubePublishInput(String(request.params.contentId));
-    if (config.youtubeChannelId !== 'UCy-H7__UvdWcTbUax3RGDcA') throw httpError('YOUTUBE_CHANNEL_CONFIGURATION_MISMATCH', 409);
-    const jobId = youtubeJobId(content.id);
-    const jobRef = db().collection('publishingJobs').doc(jobId);
-    const existing = await jobRef.get();
-    if (existing.exists) {
-      const job = existing.data() as PublishingJobRecord;
-      response.json({ job, idempotentReplay: true });
-      return;
-    }
-    const now = new Date().toISOString();
-    const extension = asset.fileName.toLowerCase().match(/\.(mp4|mov|m4v|webm)$/)?.[0] ?? '.mp4';
-    const stagingPath = `publishing-staging/youtube/${jobId}/${asset.checksumSha256?.slice(0, 24) ?? asset.id}${extension}`;
-    const commandRef = db().collection('localCommands').doc();
-    const job: PublishingJobRecord = {
-      id: jobId,
-      platform: 'youtube',
-      contentDocId: content.id,
-      contentId: content.contentId,
-      assetId: asset.id,
+    const result = await startYouTubeJob({ contentDocId: String(request.params.contentId), uid: response.locals.identity.uid, idempotencyKey: input.idempotencyKey, operation: 'private_test', privacyStatus: 'private' });
+    response.status(result.idempotentReplay ? 200 : 202).json(result);
+  } catch (error) { next(error); }
+});
+
+publishingRouter.post('/youtube/:contentId/publish', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = publishActionSchema.parse(request.body);
+    const result = await startYouTubeJob({
+      contentDocId: String(request.params.contentId), uid: response.locals.identity.uid,
       idempotencyKey: input.idempotencyKey,
-      privacyStatus: 'private',
-      status: 'staging',
-      stagingPath,
-      stagingCleanup: 'pending',
-      error: null,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: response.locals.identity.uid,
-    };
-    const batch = db().batch();
-    batch.create(jobRef, job);
-    batch.create(commandRef, {
-      id: commandRef.id,
-      agentId: 'ancv-windows-01',
-      command: 'stage_youtube_final',
-      status: 'queued',
-      contentDocId: content.id,
-      contentId: content.contentId,
-      relativePath: asset.relativePath,
-      publishingJobId: jobId,
-      stagingPath,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: response.locals.identity.uid,
-      error: null,
+      operation: input.mode === 'schedule' ? 'schedule' : 'publish_now',
+      privacyStatus: input.mode === 'schedule' ? 'private' : 'public',
+      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
     });
-    await batch.commit();
-    response.status(202).json({ job, commandId: commandRef.id, idempotentReplay: false });
+    response.status(result.idempotentReplay ? 200 : 202).json(result);
+  } catch (error) { next(error); }
+});
+
+publishingRouter.post('/wordpress/:contentId/publish', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = publishActionSchema.parse(request.body);
+    const result = await publishWordPressContent(String(request.params.contentId), response.locals.identity.uid, input.mode, input.scheduledAt);
+    response.status(result.idempotentReplay ? 200 : 201).json(result);
   } catch (error) { next(error); }
 });
 
@@ -175,10 +202,11 @@ publishingRouter.post('/youtube/jobs/:jobId/execute', requireFirebaseEditor, asy
       body,
       mediaUrls: [],
       stagingPath: claimed.job.stagingPath,
-      privacyStatus: 'private',
+      privacyStatus: claimed.job.privacyStatus,
+      ...(claimed.job.scheduledAt ? { scheduledAt: claimed.job.scheduledAt } : {}),
     });
     const now = new Date().toISOString();
-    if (!result.success || !result.platformPostId || result.channelId !== config.youtubeChannelId || result.privacyStatus !== 'private') {
+    if (!result.success || !result.platformPostId || result.channelId !== config.youtubeChannelId || result.privacyStatus !== claimed.job.privacyStatus || (claimed.job.scheduledAt && result.scheduledAt !== claimed.job.scheduledAt)) {
       await jobRef.update({
         status: 'needs_manual',
         error: result.errorCode ?? result.message,
@@ -199,16 +227,17 @@ publishingRouter.post('/youtube/jobs/:jobId/execute', requireFirebaseEditor, asy
       const [exists] = await storageBucket().file(claimed.job.stagingPath!).exists();
       if (exists) stagingCleanup = 'failed';
     } catch { stagingCleanup = 'failed'; }
+    const scheduled = claimed.job.operation === 'schedule';
     const platforms = updatePublication(content.platforms ?? [], 'youtube', {
-      status: 'published',
+      status: scheduled ? 'scheduled' : 'published',
       mode: 'semi_automatic',
       platformPostId: result.platformPostId,
       postUrl: result.postUrl,
-      publishedAt: now,
-      note: 'YouTube API — Riêng tư',
+      ...(scheduled ? { scheduledAt: claimed.job.scheduledAt } : { publishedAt: now }),
+      note: scheduled ? 'Đã lên lịch trên YouTube' : claimed.job.operation === 'private_test' ? 'YouTube API — Riêng tư' : 'Đã đăng trên YouTube',
       lastError: undefined,
     });
-    const status = aggregatePublishingStatus(platforms);
+    const status = scheduled ? 'scheduled' : aggregatePublishingStatus(platforms);
     const completed: Partial<PublishingJobRecord> = {
       status: 'succeeded',
       videoId: result.platformPostId,

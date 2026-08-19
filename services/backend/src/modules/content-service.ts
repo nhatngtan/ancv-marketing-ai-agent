@@ -208,12 +208,34 @@ contentRouter.post('/:contentId/audit', async (request, response, next) => {
   catch (error) { next(error); }
 });
 
+export const manualPublishInputSchema = z.object({
+  platform: z.enum(['youtube','facebook','tiktok','linkedin','zalo','website']),
+  postUrl: z.string().url().max(2_000).optional(),
+  platformPostId: z.string().max(500).optional(),
+  note: z.string().max(2_000).optional(),
+});
+
+export function markPlatformPublished(current: PlatformPublication[], input: z.infer<typeof manualPublishInputSchema>, now: string): PlatformPublication[] {
+  const published: PlatformPublication = {
+    platform: input.platform,
+    mode: 'manual',
+    status: 'published',
+    ...(input.postUrl ? { postUrl: input.postUrl } : {}),
+    ...(input.platformPostId ? { platformPostId: input.platformPostId } : {}),
+    ...(input.note ? { note: input.note } : {}),
+    publishedAt: now,
+  };
+  return current.some((item) => item.platform === input.platform)
+    ? current.map((item) => item.platform === input.platform ? { ...item, ...published } : item)
+    : [...current, published];
+}
+
 contentRouter.post('/:contentId/manual-publish', async (request, response, next) => {
   try {
-    const input = z.object({ platform: z.enum(['youtube','facebook','tiktok','linkedin','zalo','website']), postUrl: z.string().url().max(2_000).optional(), platformPostId: z.string().max(500).optional(), note: z.string().max(2_000).optional() }).parse(request.body);
+    const input = manualPublishInputSchema.parse(request.body);
     const ref = db().collection('contents').doc(request.params.contentId); const snapshot = await ref.get(); if (!snapshot.exists) { response.status(404).json({ error: 'CONTENT_NOT_FOUND' }); return; }
     const current = (snapshot.data()?.platforms ?? []) as PlatformPublication[]; const now = new Date().toISOString();
-    const platforms: PlatformPublication[] = current.map((item) => item.platform === input.platform ? { ...item, status: 'published' as const, postUrl: input.postUrl, platformPostId: input.platformPostId, note: input.note, publishedAt: now } : item);
+    const platforms = markPlatformPublished(current, input, now);
     const status = aggregatePublishingStatus(platforms); await ref.update({ platforms, status, updatedAt: now }); await audit(response.locals.identity.uid, 'content.manual_publish', request.params.contentId, { platform: input.platform, postUrl: input.postUrl ?? null }); response.json({ platforms, status });
   } catch (error) { next(error); }
 });

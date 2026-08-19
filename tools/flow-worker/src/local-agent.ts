@@ -6,6 +6,7 @@ import type {
   BrowserPlatformStatus,
   BrowserProfileMapping,
   BrowserProfileStatus,
+  ContentRecord,
   FlowAccountRecord,
   FlowJobRecord,
   LocalCommandRecord,
@@ -23,6 +24,8 @@ import { assertFlowRuntimeSnapshot } from "./flow-runtime.js";
 import { scanChromeProfiles } from "./chrome-profile-scanner.js";
 import {
   inspectLocalFinalCandidate,
+  LocalFinalStabilityRegistry,
+  observeLocalFinalFiles,
   registerLocalFinalVideo,
   scanLocalFinalCandidates,
 } from "./local-storage.js";
@@ -100,6 +103,8 @@ export class LocalAgent {
   );
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private stopped = false;
+  private readonly finalStability = new LocalFinalStabilityRegistry();
+  private nextFinalDetectionAt = 0;
 
   async startBridge(): Promise<void> {
     ensureLocalDirectories();
@@ -130,6 +135,10 @@ export class LocalAgent {
         if (command) await this.processLocalCommand(command);
         const job = await this.nextFlowJob();
         if (job) await this.processFlowJob(job);
+        if (Date.now() >= this.nextFinalDetectionAt) {
+          this.nextFinalDetectionAt = Date.now() + 5_000;
+          await this.autoDetectVideoFinals();
+        }
         if (!command && !job) await sleep(2_000);
       }, async (errorCode) => {
         console.log(JSON.stringify({ event: "local_agent_iteration_error", errorCode }));
@@ -339,6 +348,42 @@ export class LocalAgent {
       });
     });
     await batch.commit();
+  }
+
+  private async autoDetectVideoFinals(): Promise<void> {
+    const snapshot = await firestore.collection("contents").where("type", "==", "video").get();
+    for (const document of snapshot.docs) {
+      const content = { id: document.id, ...document.data() } as ContentRecord;
+      if (content.finalVideoAssetId || !/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(content.contentId)) continue;
+      const observations = await observeLocalFinalFiles(content.contentId);
+      const stablePaths = this.finalStability.observe(content.contentId, observations);
+      if (observations.length === 1 && stablePaths.length === 1) {
+        const asset = await registerLocalFinalVideo({
+          contentDocId: content.id,
+          contentId: content.contentId,
+          relativePath: stablePaths[0]!,
+          createdBy: `local-agent:${this.config.agentId}`,
+        });
+        console.log(JSON.stringify({ event: "local_final_auto_registered", contentId: content.contentId, assetId: asset.id }));
+        continue;
+      }
+      if (observations.length > 1 && stablePaths.length === observations.length) {
+        const candidates = await Promise.all(stablePaths.map((path) => inspectLocalFinalCandidate(content.contentId, path)));
+        const previousPaths = (content.finalDetection?.candidates ?? []).map((item) => item.relativePath).sort();
+        const currentPaths = candidates.map((item) => item.relativePath).sort();
+        if (content.finalDetection?.status === "multiple" && previousPaths.join("|") === currentPaths.join("|")) continue;
+        const now = new Date().toISOString();
+        await document.ref.update({
+          finalDetection: {
+            status: "multiple",
+            candidates,
+            checkedAt: now,
+            message: "Có nhiều Video Final; cần chọn đúng một file.",
+          },
+          updatedAt: now,
+        });
+      }
+    }
   }
 
   private async nextFlowJob(): Promise<FlowJobRecord | null> {
@@ -588,7 +633,8 @@ export class LocalAgent {
         await mkdir(target, { recursive: true });
       const info = await stat(target);
       const folder = info.isDirectory() ? target : dirname(target);
-      const child = spawn("explorer.exe", [folder], {
+      const explorerArguments = command.command === "open_file" && info.isFile() ? [`/select,${target}`] : [folder];
+      const child = spawn("explorer.exe", explorerArguments, {
         detached: true,
         stdio: "ignore",
         windowsHide: false,

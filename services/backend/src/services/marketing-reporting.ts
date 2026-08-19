@@ -164,25 +164,30 @@ export function deriveMarketingOperations(documents: Pick<ReportingDocuments, 'c
     const copies = Object.values(content.platformCopies ?? {});
     const copiesNeedReview = copies.length > 0 && copies.some((copy) => copy?.status !== 'approved');
     const finalMissing = content.type === 'video' && assets.some((asset) => asset.kind === 'scene_take') && !content.finalVideoAssetId && !assets.some((asset) => asset.kind === 'video_final' && asset.selected);
-    const wordpressMissing = content.type === 'article' && ['approved', 'ready_to_publish', 'scheduled'].includes(content.status) && !content.wordpressDraft;
+    const finalReady = content.type === 'video' && Boolean(content.finalVideoAssetId || assets.some((asset) => asset.kind === 'video_final' && asset.selected)) && ['post_production', 'awaiting_copy'].includes(content.status);
+    const websitePending = content.type === 'article'
+      && ['approved', 'ready_to_publish', 'scheduled'].includes(content.status)
+      && !(content.platforms ?? []).some((publication) => publication.platform === 'website' && ['published', 'scheduled'].includes(publication.status));
     const youtubeMissing = content.type === 'video' && ['approved', 'ready_to_publish', 'scheduled'].includes(content.status) && !documents.publishingJobs.some((job) => job.contentDocId === content.id && job.status === 'succeeded');
     const overdue = Boolean(content.dueDate && content.dueDate < today);
-    let reason: MarketingTodayAction['reason'] = 'continue_work';
-    let label = `${content.title} — tiếp tục ${pipeline.currentStep.toLocaleLowerCase('vi')}`;
+    let reason: MarketingTodayAction['reason'] | null = null;
+    let label = '';
     if (overdue) { reason = 'overdue'; label = `${content.title} — đã quá hạn`; }
     else if (flowNeedsManual) { reason = 'flow_needs_manual'; label = `${content.title} — Google Flow cần kiểm tra`; }
     else if (content.status === 'review') { reason = 'review'; label = `${content.title} — cần duyệt`; }
     else if (finalMissing) { reason = 'missing_final'; label = `${content.title} — cần hậu kỳ`; }
+    else if (finalReady) { reason = 'final_ready'; label = `${content.title} — Video Final đã sẵn sàng`; }
     else if (copiesNeedReview) { reason = 'copies_review'; label = `${content.title} — nội dung nền tảng cần duyệt`; }
-    else if (wordpressMissing) { reason = 'wordpress_draft'; label = `${content.title} — cần tạo WordPress Draft`; }
+    else if (websitePending) { reason = 'wordpress_draft'; label = `${content.title} — chưa đăng Website`; }
     else if (youtubeMissing) { reason = 'youtube_upload'; label = `${content.title} — chưa tải lên YouTube`; }
+    if (!reason) continue;
     const action = quickAction(content, pipeline);
     actions.push({
       id: `${content.id}:${reason}`, contentDocId: content.id, contentId: content.contentId, title: content.title,
       type: content.type, label, reason, priority: content.priority ?? 'normal', ...(content.dueDate ? { dueDate: content.dueDate } : {}), quickAction: action.action,
     });
   }
-  const reasonRank: Record<MarketingTodayAction['reason'], number> = { overdue: 0, flow_needs_manual: 1, review: 2, missing_final: 3, copies_review: 4, wordpress_draft: 5, youtube_upload: 6, continue_work: 7 };
+  const reasonRank: Record<MarketingTodayAction['reason'], number> = { overdue: 0, flow_needs_manual: 1, review: 2, missing_final: 3, final_ready: 4, copies_review: 5, wordpress_draft: 6, youtube_upload: 7, continue_work: 8 };
   actions.sort((left, right) => Number(right.priority === 'high') - Number(left.priority === 'high') || reasonRank[left.reason] - reasonRank[right.reason] || String(left.dueDate ?? '9999').localeCompare(String(right.dueDate ?? '9999')));
   return { work, today: actions.slice(0, 8) };
 }
@@ -376,6 +381,7 @@ export function buildMarketingDashboard(
   const aiOperational = documents.openAIStatus === 'available';
   const flowStatus = agentOnline ? (flowNeedsManual > 0 ? 'partial' : 'operational') : 'manual';
   const missingSources = [!ga4Connected ? 'GA4' : '', !gscConnected ? 'Search Console' : '', youtube.status !== 'connected' ? 'YouTube' : ''].filter(Boolean);
+  const operations = deriveMarketingOperations(documents, now);
 
   return {
     generatedAt: now.toISOString(),
@@ -401,7 +407,7 @@ export function buildMarketingDashboard(
     },
     publishing: { total: entries.length, byPlatform },
     pipeline,
-    operations: deriveMarketingOperations(documents, now),
+    operations,
     youtube,
     analytics: {
       ga4: { status: ga4Connected ? 'connected' : 'not_connected', label: ga4Connected ? 'Đã kết nối' : 'Chưa kết nối thuộc tính' },
@@ -424,6 +430,7 @@ export function buildMarketingDashboard(
       ...(youtube.range ? { youtubeViews: youtube.range.views, youtubeWatchMinutes: youtube.range.watchMinutes } : {}),
       availableSources: ['Firestore', ...(youtube.status === 'connected' ? ['YouTube'] : []), ...(ga4Connected ? ['GA4'] : []), ...(gscConnected ? ['Search Console'] : [])],
       missingSources,
+      priorities: operations.today.slice(0, 3).map((item) => ({ contentId: item.contentId, label: item.label })),
     },
   };
 }

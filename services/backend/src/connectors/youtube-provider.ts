@@ -59,7 +59,7 @@ export class YouTubePublishingProvider implements PublishingProvider {
       publishing: configured ? 'verified' : 'unavailable',
       analytics: 'partial',
       limitations: configured
-        ? ['Upload yêu cầu duyệt thủ công và luôn dùng privacyStatus=private trong V1.', 'API project chưa audit có thể bị giới hạn private.']
+        ? ['Mọi lần đăng hoặc lên lịch đều yêu cầu người dùng duyệt và xác nhận.', 'API project chưa audit có thể bị giới hạn private.']
         : ['Thiếu YouTube OAuth credential trong Secret Manager.'],
       mode: configured ? 'semi_automatic' : 'manual',
     };
@@ -74,7 +74,10 @@ export class YouTubePublishingProvider implements PublishingProvider {
 
   async publish(input: PublishInput): Promise<PublishResult> {
     if (!input.stagingPath) return this.failure('YOUTUBE_STAGING_REQUIRED', 'Chưa có file staging tạm thời.');
-    if (input.privacyStatus !== 'private') return this.failure('YOUTUBE_PRIVATE_REQUIRED', 'V1 chỉ cho phép upload Riêng tư.');
+    const privacyStatus = input.privacyStatus ?? 'private';
+    const scheduledAt = input.scheduledAt?.trim();
+    if (scheduledAt && privacyStatus !== 'private') return this.failure('YOUTUBE_SCHEDULE_PRIVATE_REQUIRED', 'Video lên lịch phải được tải lên ở trạng thái riêng tư trước giờ công khai.');
+    if (scheduledAt && (!Number.isFinite(Date.parse(scheduledAt)) || Date.parse(scheduledAt) <= Date.now())) return this.failure('YOUTUBE_SCHEDULE_INVALID', 'Thời gian lên lịch không hợp lệ.');
     try {
       const accessToken = await this.accessToken();
       const channelId = await this.verifyChannel(accessToken);
@@ -94,7 +97,7 @@ export class YouTubePublishingProvider implements PublishingProvider {
             description: input.body.trim().slice(0, 5_000),
             categoryId: '22',
           },
-          status: { privacyStatus: 'private', selfDeclaredMadeForKids: false },
+          status: { privacyStatus, selfDeclaredMadeForKids: false, ...(scheduledAt ? { publishAt: scheduledAt } : {}) },
         }),
         signal: AbortSignal.timeout(60_000),
       });
@@ -113,9 +116,10 @@ export class YouTubePublishingProvider implements PublishingProvider {
         headers: { authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(60_000),
       });
-      const verification = await verify.json() as { items?: Array<{ id: string; snippet?: { channelId?: string }; status?: { privacyStatus?: string } }> };
+      const verification = await verify.json() as { items?: Array<{ id: string; snippet?: { channelId?: string }; status?: { privacyStatus?: string; publishAt?: string } }> };
       const video = verification.items?.find((item) => item.id === uploaded.id);
-      if (!verify.ok || video?.snippet?.channelId !== this.expectedChannelId || video?.status?.privacyStatus !== 'private') {
+      const scheduleMatches = !scheduledAt || Math.abs(Date.parse(video?.status?.publishAt ?? '') - Date.parse(scheduledAt)) < 1_000;
+      if (!verify.ok || video?.snippet?.channelId !== this.expectedChannelId || video?.status?.privacyStatus !== privacyStatus || !scheduleMatches) {
         return this.failure('YOUTUBE_UPLOAD_VERIFICATION_FAILED', `Video ${uploaded.id} cần kiểm tra thủ công; không retry.`, uploaded.id);
       }
       return {
@@ -124,8 +128,9 @@ export class YouTubePublishingProvider implements PublishingProvider {
         platformPostId: uploaded.id,
         postUrl: `https://youtu.be/${uploaded.id}`,
         channelId: this.expectedChannelId,
-        privacyStatus: 'private',
-        message: 'Đã upload YouTube ở chế độ Riêng tư và xác minh đúng channel.',
+        privacyStatus,
+        ...(scheduledAt ? { scheduledAt } : {}),
+        message: scheduledAt ? 'Đã lên lịch YouTube và xác minh đúng kênh.' : 'Đã đăng YouTube và xác minh đúng kênh.',
       };
     } catch (error) {
       return this.failure('YOUTUBE_UPLOAD_ERROR_NO_RETRY', error instanceof Error ? error.message : 'YouTube upload thất bại; không retry.');

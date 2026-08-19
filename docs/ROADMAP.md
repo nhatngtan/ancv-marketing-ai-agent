@@ -34,6 +34,12 @@ Ngày 2026-08-12 (2D.4A): recovery existing output đã PASS bằng UI Download 
 
 Implement phần PASS qua `PublishingProvider`/`AnalyticsProvider`; token trong Secret Manager; scheduler chỉ gọi connector đủ trạng thái. Test revoke token, quota, partial failure và idempotent replay.
 
+### Simple Automation V1.1 — 2026-08-19
+
+Auto-detect Video Final local-first, UI **Đăng / Lên lịch** cho YouTube/WordPress, Manual Social Handoff một click và báo cáo tuần từ dữ liệu thật đã được triển khai. Auto Final UAT bằng MP4 local thật PASS, không dùng Scan/Register và không tạo duplicate. YouTube public/schedule và WordPress publish/schedule đã có automated tests nhưng external write UAT vẫn chờ Owner cho phép.
+
+Social API onboarding Facebook/TikTok/Zalo/LinkedIn được **DEFERRED BY OWNER**. Production tiếp tục Manual Social; không triển khai OAuth/App Review/browser automation cho các nền tảng này.
+
 ## Experimental
 
 Flow Worker dùng browser automation với timeout, screenshot lỗi, retry có giới hạn và manual upload. Không tự động hóa CapCut ở giai đoạn đầu.

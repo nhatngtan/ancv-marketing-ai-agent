@@ -22,7 +22,7 @@ export const CONTENT_STATUSES = [
 ] as const;
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 export type ContentPriority = 'normal' | 'high';
-export type PublishingStatus = 'pending' | 'processing' | 'published' | 'needs_action' | 'manual_pending' | 'failed' | 'skipped';
+export type PublishingStatus = 'pending' | 'processing' | 'scheduled' | 'published' | 'needs_action' | 'manual_pending' | 'failed' | 'skipped';
 export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type FlowAccountStatus = 'ready' | 'needs_login' | 'needs_verification' | 'unavailable';
 export type FlowJobStatus = 'queued' | 'processing' | 'succeeded' | 'needs_manual';
@@ -75,6 +75,7 @@ export interface PlatformPublication {
   postUrl?: string;
   platformPostId?: string;
   publishedAt?: string;
+  scheduledAt?: string;
   note?: string;
   lastError?: string;
 }
@@ -102,6 +103,7 @@ export interface ContentRecord extends AuditFields {
   visualStyle?: VisualStyle;
   selectedImageId?: string;
   finalVideoAssetId?: string;
+  finalDetection?: LocalFinalDetection;
   approvedAt?: string;
   approvedBy?: string;
   completedAt?: string;
@@ -118,12 +120,27 @@ export interface WordPressDraftState {
   siteUrl: string;
   postId: number;
   featuredMediaId: number;
-  status: 'draft';
+  status: 'draft' | 'future' | 'publish';
   slug: string;
   postUrl?: string;
   yoastMetadata: 'synced' | 'not_synced';
   createdAt: string;
   createdBy: string;
+  scheduledAt?: string;
+  publishedAt?: string;
+}
+
+export interface WordPressPublishingJobRecord extends AuditFields {
+  platform: 'website';
+  operation: 'publish_now' | 'schedule';
+  contentDocId: string;
+  contentId: string;
+  wordpressPostId: number;
+  idempotencyKey: string;
+  status: 'processing' | 'succeeded' | 'needs_manual';
+  scheduledAt?: string;
+  completedAt?: string;
+  error?: string | null;
 }
 
 export interface WordPressDraftJobRecord extends AuditFields {
@@ -261,13 +278,22 @@ export interface LocalFinalCandidate {
   checksumSha256?: string;
 }
 
+export interface LocalFinalDetection {
+  status: 'watching' | 'multiple' | 'ready' | 'error';
+  candidates?: LocalFinalCandidate[];
+  checkedAt: string;
+  message?: string;
+}
+
 export interface PublishingJobRecord extends AuditFields {
   platform: 'youtube';
   contentDocId: string;
   contentId: string;
   assetId: string;
   idempotencyKey: string;
-  privacyStatus: 'private';
+  privacyStatus: 'private' | 'public';
+  operation?: 'private_test' | 'publish_now' | 'schedule';
+  scheduledAt?: string;
   status: 'staging' | 'staged' | 'uploading' | 'succeeded' | 'needs_manual';
   stagingPath?: string;
   stagingCleanup?: 'pending' | 'completed' | 'failed';
@@ -472,7 +498,7 @@ export interface MarketingTodayAction {
   title: string;
   type: ContentType;
   label: string;
-  reason: 'overdue' | 'flow_needs_manual' | 'review' | 'missing_final' | 'copies_review' | 'wordpress_draft' | 'youtube_upload' | 'continue_work';
+  reason: 'overdue' | 'flow_needs_manual' | 'review' | 'missing_final' | 'final_ready' | 'copies_review' | 'wordpress_draft' | 'youtube_upload' | 'continue_work';
   priority: ContentPriority;
   dueDate?: string;
   quickAction: MarketingQuickAction;
@@ -561,6 +587,7 @@ export interface MarketingDashboardResponse {
     youtubeWatchMinutes?: number;
     availableSources: string[];
     missingSources: string[];
+    priorities: Array<{ contentId: string; label: string }>;
   };
 }
 

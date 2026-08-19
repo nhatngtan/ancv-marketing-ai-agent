@@ -22,6 +22,7 @@ const statusLabel: Record<string, string> = {
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function monthStart() { const date = new Date(); return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString().slice(0, 10); }
+function weekStart() { const date = new Date(); date.setDate(date.getDate() - 6); return date.toISOString().slice(0, 10); }
 function formatNumber(value?: number) { return value === undefined ? 'Không khả dụng' : value.toLocaleString('vi-VN'); }
 function formatMinutes(value?: number) { return value === undefined ? 'Không khả dụng' : `${Math.round(value).toLocaleString('vi-VN')} phút`; }
 
@@ -48,6 +49,11 @@ export function MarketingDashboard({ contents, onCreateWork = () => undefined, o
 
   if (!data) return <DashboardFallback contents={contents} loading={loading} error={error} onRetry={load}/>;
   const operations = data.operations ?? { work: [], today: [] };
+  const attentionItems: Array<{ label: string; value: number | string }> = [];
+  if (data.pending.flowNeedsManual > 0) attentionItems.push({ label: 'Flow cần kiểm tra', value: data.pending.flowNeedsManual });
+  if (data.pending.publishingErrors > 0) attentionItems.push({ label: 'Đăng Content cần kiểm tra', value: data.pending.publishingErrors });
+  if (data.pending.localAgentOffline) attentionItems.push({ label: 'Máy xử lý đang tắt', value: 'Cần bật' });
+  if (data.pending.awaitingApproval > 0) attentionItems.push({ label: 'Content cần duyệt', value: data.pending.awaitingApproval });
   const contentById = new Map(contents.map((content) => [content.id, content]));
   const normalizedSearch = search.trim().toLocaleLowerCase('vi');
   const work = operations.work.filter((item) => {
@@ -91,14 +97,14 @@ export function MarketingDashboard({ contents, onCreateWork = () => undefined, o
       {work.length === 0 ? <p className="empty-line">Không tìm thấy công việc phù hợp.</p> : <div className="work-list">{work.map((item) => <article key={item.id} className={item.overdue ? 'overdue' : ''}><button className="work-main" onClick={() => openItem(item.id)}><span className={`work-type ${item.type}`}>{item.type === 'video' ? <Video size={16}/> : <FileText size={16}/>}</span><span className="work-name"><strong>{item.title}</strong><small>{item.contentId} · {item.type === 'video' ? 'Video' : 'Bài Website'}</small></span><Badge tone={item.statusGroup === 'completed' ? 'success' : item.overdue ? 'danger' : item.statusGroup === 'review' ? 'warning' : 'info'}>{item.statusLabel}</Badge><span className="work-progress"><i><b style={{ width: `${item.progress}%` }}/></i><small>{item.progress}% · {item.currentStep}</small></span><span className="work-due">{item.dueDate ? <><strong>{item.overdue ? 'Quá hạn' : 'Hạn hoàn thành'}</strong><small>{new Date(`${item.dueDate}T00:00:00`).toLocaleDateString('vi-VN')}</small></> : <small>Chưa đặt hạn</small>}</span><small className="work-updated">{new Date(item.updatedAt).toLocaleDateString('vi-VN')}</small></button><div className="work-actions"><button className="secondary" onClick={() => runQuickAction(item)}>{item.quickAction === 'open_video_folder' && <FolderOpen size={14}/>} {item.quickActionLabel}</button>{item.statusGroup !== 'completed' && <button className="text-button" onClick={() => markComplete(item)}><CheckCircle2 size={14}/>Đánh dấu hoàn tất</button>}{item.status !== 'archived' && <button className="text-button" onClick={() => archive(item)}><Archive size={14}/>Lưu trữ</button>}</div></article>)}</div>}
     </section>
     <section className="dashboard-section"><div className="dashboard-section-title"><span>BÁO CÁO NHANH</span></div><div className="month-grid"><Metric label="Video tháng này" value={data.month.videos}/><Metric label="Bài Website" value={data.month.websiteArticles}/><Metric label="Đã đăng YouTube" value={data.month.youtubePublished}/><Metric label="Social đã ghi nhận" value={data.month.socialPublished}/></div></section>
-    <div className="dashboard-columns"><YouTubeSummary data={data}/><section className="panel"><div className="panel-head"><div><span className="eyebrow">CẦN XỬ LÝ</span><h2>Tổng hợp</h2></div></div><div className="attention-list"><Attention label="Flow cần kiểm tra" value={data.pending.flowNeedsManual}/><Attention label="Lỗi đăng Content" value={data.pending.publishingErrors}/><Attention label="Local Agent" value={data.pending.localAgentOffline ? 'Offline' : 'Online'} danger={data.pending.localAgentOffline}/><Attention label="Content cần duyệt" value={data.pending.awaitingApproval}/></div></section></div>
+    <div className="dashboard-columns"><YouTubeSummary data={data}/><section className="panel"><div className="panel-head"><div><span className="eyebrow">CẦN BẠN XỬ LÝ</span><h2>Việc đang chờ</h2></div></div>{attentionItems.length === 0 ? <p className="empty-line">Không có việc bất thường cần xử lý.</p> : <div className="attention-list">{attentionItems.map((item) => <Attention key={item.label} label={item.label} value={item.value}/>)}</div>}</section></div>
     <section className="panel health-compact"><div className="panel-head"><div><span className="eyebrow">TÌNH TRẠNG</span><h2>Hệ thống Marketing</h2></div></div><div className="health-compact-grid">{data.health.map((item) => <div key={item.key}><i className={item.status}></i><span><strong>{item.label}</strong><small>{item.detail}</small></span></div>)}</div></section>
     <div className="analytics-safe-grid"><AnalyticsSafe title="GA4" label={data.analytics.ga4.label}/><AnalyticsSafe title="Search Console" label={data.analytics.searchConsole.label}/></div>
   </>;
 }
 
 export function MarketingReportPage() {
-  const [from, setFrom] = useState(monthStart());
+  const [from, setFrom] = useState(weekStart());
   const [to, setTo] = useState(today());
   const [data, setData] = useState<MarketingDashboardResponse | null>(null);
   const [error, setError] = useState('');
@@ -111,19 +117,20 @@ export function MarketingReportPage() {
   }, [from, to]);
   useEffect(() => {
     let active = true;
-    fetchMarketingDashboard(monthStart(), today())
+    fetchMarketingDashboard(weekStart(), today())
       .then((result) => { if (active) setData(result); })
       .catch(() => { if (active) setError('Không thể tạo báo cáo cho khoảng thời gian này.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
   return <>
-    <div className="page-heading"><div><span className="eyebrow">BÁO CÁO MARKETING</span><h1>Báo cáo theo thời gian</h1><p>Chỉ dùng dữ liệu có thật từ Firestore và YouTube; nguồn thiếu luôn được ghi rõ.</p></div></div>
+    <div className="page-heading"><div><span className="eyebrow">BÁO CÁO TUẦN</span><h1>Tình hình Marketing</h1><p>Chỉ dùng dữ liệu có thật từ Firestore và YouTube; nguồn thiếu luôn được ghi rõ.</p></div></div>
     <section className="panel report-filter"><label>Từ ngày<input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)}/></label><label>Đến ngày<input type="date" value={to} min={from} max={today()} onChange={(event) => setTo(event.target.value)}/></label><button className="primary" disabled={loading || !from || !to} onClick={load}><BarChart3 size={16}/>{loading ? 'Đang tổng hợp…' : 'Xem báo cáo'}</button></section>
     {error && <div className="report-warning"><AlertTriangle size={16}/>{error}</div>}
     {data && <>
       <div className="stats-grid report-stats"><StatCard label="Video hoàn tất" value={data.report.completedVideos} note="Trong khoảng đã chọn" icon={Video} tone="blue"/><StatCard label="Bài viết hoàn tất" value={data.report.completedArticles} note="Trong khoảng đã chọn" icon={FileText} tone="violet"/><StatCard label="Lượt đăng đã ghi nhận" value={data.report.publishedPosts} note="Tổng các nền tảng" icon={CheckCircle2} tone="green"/><StatCard label="Content đang chờ" value={data.report.pendingContents} note="Chưa hoàn tất" icon={Clock3} tone="amber"/></div>
       <div className="dashboard-columns"><section className="panel"><div className="panel-head"><div><span className="eyebrow">YOUTUBE</span><h2>Hiệu quả trong kỳ</h2></div></div>{data.youtube.status === 'connected' ? <div className="report-youtube"><Metric label="Lượt xem" value={formatNumber(data.report.youtubeViews)}/><Metric label="Thời gian xem" value={formatMinutes(data.report.youtubeWatchMinutes)}/></div> : <SourceUnavailable label="Dữ liệu YouTube không khả dụng"/>}</section><section className="panel source-list"><div><strong>Nguồn có dữ liệu</strong><p>{data.report.availableSources.join(' · ') || 'Không có'}</p></div><div><strong>Nguồn còn thiếu</strong><p>{data.report.missingSources.join(' · ') || 'Không có'}</p></div></section></div>
+      <section className="panel"><div className="panel-head"><div><span className="eyebrow">ƯU TIÊN TUẦN TỚI</span><h2>Tối đa 3 việc</h2></div></div>{data.report.priorities.length === 0 ? <p className="empty-line">Chưa có việc ưu tiên từ dữ liệu hiện tại.</p> : <div className="today-list">{data.report.priorities.map((item) => <div key={`${item.contentId}:${item.label}`}><span><strong>{item.label}</strong><small>{item.contentId}</small></span></div>)}</div>}</section>
       <PipelineTable data={data}/>
     </>}
   </>;
@@ -134,7 +141,7 @@ function DashboardFallback({ contents, loading, error, onRetry }: { contents: Co
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) { return <div className="metric-box"><strong>{value}</strong><span>{label}</span></div>; }
-function Attention({ label, value, danger = Number(value) > 0 }: { label: string; value: number | string; danger?: boolean }) { return <div><span>{label}</span><Badge tone={danger ? 'warning' : 'success'}>{value}</Badge></div>; }
+function Attention({ label, value, danger = true }: { label: string; value: number | string; danger?: boolean }) { return <div><span>{label}</span><Badge tone={danger ? 'warning' : 'success'}>{value}</Badge></div>; }
 function AnalyticsSafe({ title, label }: { title: string; label: string }) { return <section className="panel analytics-safe"><div><strong>{title}</strong><span>{label}</span></div><Badge tone={label === 'Đã kết nối' ? 'success' : 'neutral'}>{label === 'Đã kết nối' ? 'Hoạt động' : 'Chưa kết nối'}</Badge></section>; }
 function SourceUnavailable({ label }: { label: string }) { return <div className="source-unavailable"><AlertTriangle size={18}/><span>{label}</span></div>; }
 

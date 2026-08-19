@@ -100,8 +100,30 @@ describe('marketing reporting aggregation', () => {
     }, youtubeUnavailable, '2026-08-01', '2026-08-15', now);
     expect(result.content).toEqual({ total: 1, inProgress: 1, awaitingApproval: 0, readyToPublish: 0, completed: 0 });
     expect(result.operations.work.map((item) => item.id)).toEqual(['legacy-active']);
-    expect(result.operations.today.map((item) => item.contentDocId)).toEqual(['legacy-active']);
+    expect(result.operations.today).toEqual([]);
     expect(result.pipeline.map((item) => item.id)).toEqual(['legacy-active']);
+  });
+
+  it('shows only grounded actionable work and limits weekly priorities to three', () => {
+    const finalReady = content({ id: 'final-ready', status: 'awaiting_copy', finalVideoAssetId: 'final-1' });
+    const review = content({ id: 'review', status: 'review' });
+    const overdue = content({ id: 'overdue', status: 'draft', dueDate: '2026-08-14' });
+    const copyReview = content({ id: 'copy-review', status: 'draft', platformCopies: { facebook: { platform: 'facebook', text: 'Draft', status: 'draft', version: 1 } } });
+    const result = buildMarketingDashboard({
+      contents: [finalReady, review, overdue, copyReview], scenes: [], assets: [], publishingJobs: [], flowJobs: [], localAgents: [], connectors: [],
+    }, youtubeUnavailable, '2026-08-09', '2026-08-15', now);
+    expect(result.operations.today.map((item) => item.reason)).toEqual(['overdue', 'review', 'final_ready', 'copies_review']);
+    expect(result.report.priorities).toHaveLength(3);
+    expect(result.report.priorities).toEqual(result.operations.today.slice(0, 3).map((item) => ({ contentId: item.contentId, label: item.label })));
+  });
+
+  it('keeps an approved Article actionable even when its WordPress Draft already exists', () => {
+    const article = content({
+      id: 'article-ready', contentId: 'ANCV-ART-2026-009', type: 'article', status: 'approved',
+      wordpressDraft: { siteUrl: 'https://anninhcanhve.com', postId: 9, featuredMediaId: 10, status: 'draft', slug: 'article-ready', yoastMetadata: 'not_synced', createdAt: now.toISOString(), createdBy: 'tester' },
+    });
+    const operations = deriveMarketingOperations({ contents: [article], scenes: [], assets: [], flowJobs: [], publishingJobs: [] }, now);
+    expect(operations.today[0]).toMatchObject({ contentDocId: 'article-ready', reason: 'wordpress_draft', label: 'Content test — chưa đăng Website' });
   });
 
   it('returns operational counts to baseline after a fixture is soft archived', () => {

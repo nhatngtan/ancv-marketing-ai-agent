@@ -1,7 +1,8 @@
 /* eslint-disable react-hooks/set-state-in-effect -- Firestore snapshots intentionally refresh editor drafts. */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowRight,
+  CalendarClock,
   Check,
   ChevronDown,
   Clipboard,
@@ -28,7 +29,6 @@ import type {
   FlowAccountRecord,
   FlowJobRecord,
   LocalAgentRecord,
-  LocalFinalCandidate,
   MediaAssetRecord,
   Platform,
   PlatformCopy,
@@ -41,7 +41,6 @@ import {
   approvePlatformCopy,
   breakdownScenes,
   createFlowJob,
-  createWordPressDraft,
   createScene,
   deleteScene,
   downloadSceneList,
@@ -66,13 +65,15 @@ import {
   subscribeScenes,
   openSceneFolder,
   openVideoFolder,
-  publishYouTubePrivate,
+  openMediaAsset,
+  publishWordPress,
+  publishYouTube,
   registerVideoFinal,
-  scanVideoFinal,
   setContentStatus,
   updateContent,
   uploadMedia,
 } from "../lib/repository";
+import { prepareSocialHandoff } from "../lib/social-handoff";
 import { flowErrorMessage, flowProgressLabel } from "../lib/flow-status";
 import { articleSaveStateLabel, shouldConfirmArticleRegeneration } from "../lib/article-seo";
 
@@ -128,6 +129,38 @@ function SegmentedControl<T extends string | number>({
       </div>
     </div>
   );
+}
+
+function PublishActionModal({
+  label,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  label: string;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (mode: "now" | "schedule", scheduledAt?: string) => void;
+}) {
+  const [mode, setMode] = useState<"now" | "schedule">("now");
+  const [dateTime, setDateTime] = useState("");
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (mode === "schedule" && !dateTime) return;
+    const scheduledAt = mode === "schedule" ? new Date(dateTime).toISOString() : undefined;
+    const message = mode === "schedule" ? `Xác nhận lên lịch ${label}?` : `Xác nhận đăng ${label} ngay?`;
+    if (!window.confirm(message)) return;
+    onSubmit(mode, scheduledAt);
+  };
+  return <div className="modal-wrap"><button className="modal-scrim" onClick={onClose}/><form className="modal publish-choice-modal" onSubmit={submit}>
+    <div className="modal-head"><div><span className="eyebrow">{label.toUpperCase()}</span><h2>Đăng / Lên lịch</h2></div><button type="button" onClick={onClose}><X/></button></div>
+    <fieldset><legend>Chọn thời điểm</legend><div className="publish-choice-options">
+      <label><input type="radio" name={`${label}-mode`} checked={mode === "now"} onChange={() => setMode("now")}/> Đăng ngay</label>
+      <label><input type="radio" name={`${label}-mode`} checked={mode === "schedule"} onChange={() => setMode("schedule")}/> Lên lịch</label>
+    </div></fieldset>
+    {mode === "schedule" && <label>Ngày và giờ<input type="datetime-local" required value={dateTime} onChange={(event) => setDateTime(event.target.value)}/></label>}
+    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}><CalendarClock size={15}/>{mode === "schedule" ? "Xác nhận lên lịch" : "Xác nhận đăng"}</button></div>
+  </form></div>;
 }
 
 const platformLabels: Record<string, string> = {
@@ -719,7 +752,8 @@ function ArticleEditor({
       "Bài Website chuẩn SEO đã được tạo.",
     );
   };
-  const selectedImage = assets.find((asset) => asset.kind === "article_image" && asset.selected);
+  const selectedImage = assets.find((asset) => asset.kind === "article_image" && asset.id === content.selectedImageId)
+    ?? assets.find((asset) => asset.kind === "article_image" && asset.selected);
   const quality = evaluateArticleSeo({ seo, body, selectedImageAltText: selectedImage?.altText });
   const patchSeo = (changes: Partial<ArticleSeoData>) => { setSeo((current) => ({ ...current, ...changes })); touch(); };
   return (
@@ -1260,7 +1294,7 @@ function MediaPanel({
   const [prompt, setPrompt] = useState(
     `Hình minh họa chuyên nghiệp cho bài viết: ${content.topic}. Không chữ, không logo giả, không thông tin chưa xác minh.`,
   );
-  const [finalCandidates, setFinalCandidates] = useState<LocalFinalCandidate[]>([]);
+  const finalCandidates = content.finalDetection?.status === "multiple" ? content.finalDetection.candidates ?? [] : [];
   const articleImages = assets.filter((item) => item.kind === "article_image");
   const finals = assets.filter((item) => item.kind === "video_final");
   const rawTakes = assets.filter((item) => item.kind === "scene_take");
@@ -1362,51 +1396,23 @@ function MediaPanel({
             </div>
             <div className="handoff-actions">
               <button className="secondary" disabled={!!busy} onClick={() => act("open-video-folder-final", () => openVideoFolder(content.id), "Đã mở thư mục dự án Video.")}><FolderOpen size={14} /> Mở thư mục Video</button>
-              <button className="primary" disabled={!!busy} onClick={() => act("scan-video-final", async () => setFinalCandidates(await scanVideoFinal(content.id)), "Đã quét thư mục Video Final.")}><RefreshCw size={14} /> Chọn / Đăng ký Video Final</button>
             </div>
             {finalCandidates.length > 0 && (
               <div className="final-candidate-list">
                 {finalCandidates.map((candidate) => (
                   <div className="asset-row" key={candidate.relativePath}>
                     <span>{candidate.fileName}</span>
-                    <Badge tone="info">Local</Badge>
                     <span>{Math.round((candidate.sizeBytes / 1024 / 1024) * 10) / 10} MB</span>
-                    <button className="small-action" disabled={!!busy} onClick={() => act(`register-final-${candidate.fileName}`, () => registerVideoFinal(content.id, candidate.relativePath), "Đã đăng ký Video Final local.")}><Check size={12} /> Đăng ký</button>
+                    <button className="small-action" disabled={!!busy} onClick={() => act(`register-final-${candidate.fileName}`, () => registerVideoFinal(content.id, candidate.relativePath), "Video Final đã sẵn sàng.")}><Check size={12} /> Chọn file này</button>
                   </div>
                 ))}
               </div>
             )}
-            {finals.length === 0 ? (
-              <div className="take-empty"><Video size={20} /><span>Chưa có Video Final.</span></div>
-            ) : (
-              finals.map((asset) => (
-                <AssetRow
-                  key={asset.id}
-                  asset={asset}
-                  onSelect={() =>
-                    act(
-                      `select-${asset.id}`,
-                      () => selectAsset(content.id, assets, asset),
-                      "Đã chọn Video Final.",
-                    )
-                  }
-                />
-              ))
-            )}
-            <AdvancedSection label="Tùy chọn cũ — Upload Cloud">
-              <label className="upload-button final-picker">
-                <Upload size={14} /> Upload Video Final lên Firebase Storage
-                <input
-                  type="file"
-                  accept="video/*"
-                  disabled={!!busy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) act("final-upload", () => uploadMedia(content, file, "video_final"), "Đã upload Video Final Cloud. Hãy chọn file chính.");
-                  }}
-                />
-              </label>
-            </AdvancedSection>
+            {finals.some((asset) => asset.id === content.finalVideoAssetId) ? (
+              <div className="take-empty final-ready"><Check size={20} /><span>Video Final đã sẵn sàng</span></div>
+            ) : finalCandidates.length === 0 ? (
+              <div className="take-empty"><Video size={20} /><span>Đang chờ file export từ CapCut…</span></div>
+            ) : null}
           </section>
         </>
       ) : (
@@ -1493,34 +1499,6 @@ function MediaPanel({
     </>
   );
 }
-function AssetRow({
-  asset,
-  onSelect,
-}: {
-  asset: MediaAssetRecord;
-  onSelect: () => void;
-}) {
-  return (
-    <div className="asset-row">
-      {asset.storageType === "local" ? (
-        <span>{asset.fileName}</span>
-      ) : (
-        <a href={asset.downloadUrl} target="_blank" rel="noreferrer">
-          {asset.fileName}
-        </a>
-      )}
-      <Badge tone={asset.storageType === "local" ? "info" : "neutral"}>
-        {asset.storageType === "local" ? "Local" : "Cloud"}
-      </Badge>
-      <span>{Math.round((asset.sizeBytes / 1024 / 1024) * 10) / 10} MB</span>
-      <button className="small-action" onClick={onSelect}>
-        <Check size={12} />
-        {asset.selected ? "Đang chọn" : "Chọn"}
-      </button>
-    </div>
-  );
-}
-
 function CopyEditor({
   content,
   busy,
@@ -1731,43 +1709,50 @@ function CopyEditor({
   );
 }
 
-const manualPlatformUrls: Partial<Record<Platform, string>> = {
-  facebook: "https://www.facebook.com/",
-  tiktok: "https://www.tiktok.com/upload",
-  zalo: "https://oa.zalo.me/manage/oa",
-  linkedin: "https://www.linkedin.com/feed/",
-};
+async function runSocialHandoff(content: ContentRecord, platform: Platform, media?: MediaAssetRecord) {
+  return prepareSocialHandoff(content, platform, media, {
+    copyText: (value) => navigator.clipboard.writeText(value),
+    openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
+    openLocalAsset: (contentDocId, assetId) => openMediaAsset(contentDocId, assetId),
+  });
+}
 
 function ArticleDistributionPanel({ content, assets, busy, act }: { content: ContentRecord; assets: MediaAssetRecord[]; busy: string; act: (k: string, a: () => Promise<unknown>, d: string) => void }) {
-  const selectedImage = assets.find((asset) => asset.kind === "article_image" && asset.selected);
+  const [showPublish, setShowPublish] = useState(false);
+  const selectedImage = assets.find((asset) => asset.kind === "article_image" && asset.id === content.selectedImageId)
+    ?? assets.find((asset) => asset.kind === "article_image" && asset.selected);
   const quality = evaluateArticleSeo({ seo: content.articleSeo, body: content.body, selectedImageAltText: selectedImage?.altText });
   const socialPlatforms: Platform[] = ["facebook", "zalo", "linkedin"];
   const articleApproved = Boolean(content.approvedAt);
   const socialApproved = socialPlatforms.every((platform) => content.platformCopies?.[platform]?.status === "approved");
-  const wordpressCreated = content.wordpressDraft?.status === "draft";
-  const wordpressAuditFixture = content.testContent === true;
-  const wordpressReady = articleApproved && quality.checks.every((item) => item.passed) && Boolean(selectedImage?.altText) && wordpressAuditFixture;
+  const wordpressReady = articleApproved && quality.checks.every((item) => item.passed) && Boolean(selectedImage?.altText);
+  const websitePublication = content.platforms.find((item) => item.platform === "website");
   return <section className="publishing-panel article-distribution-panel">
-    <div className="section-title"><div><span className="step-label">Phân phối</span><h3>Website & mạng xã hội</h3><small>Website là Article canonical. WordPress luôn tạo bản nháp trước khi người dùng kiểm tra.</small></div></div>
+    <div className="section-title"><div><span className="step-label">Phân phối</span><h3>Website & mạng xã hội</h3><small>Đăng Website hoặc chuẩn bị nội dung để đăng thủ công lên mạng xã hội.</small></div></div>
     <div className="article-completion-summary">
       <div><strong>Bài Website</strong><small>{articleApproved ? "✓ Nội dung đã duyệt" : "Chờ duyệt"}</small></div>
       <div><strong>SEO</strong><small>{quality.checks.filter((item) => item.passed).length}/{quality.checks.length} mục đạt</small></div>
       <div><strong>Hình ảnh</strong><small>{selectedImage?.altText ? "✓ Ảnh chính + Alt Text" : "Chưa đủ ảnh chính/Alt Text"}</small></div>
       <div><strong>Social</strong><small>{socialApproved ? "✓ 3/3 đã duyệt" : "Chờ duyệt đủ 3 bản"}</small></div>
     </div>
-    <div className="publishing-row"><div><strong>Website</strong><small>{wordpressCreated ? `Bản nháp WordPress đã tạo · Post #${content.wordpressDraft?.postId}` : "Chưa tạo bản nháp"}</small></div><button className="primary" disabled={!!busy || wordpressCreated || !wordpressReady} title={wordpressCreated ? "Bản nháp đã tồn tại; hệ thống khóa tạo trùng." : !wordpressReady ? "Cần Article TEST đã duyệt, SEO đạt và ảnh chính có Alt Text." : "Tạo đúng 01 bản nháp WordPress"} onClick={() => {
-      if (!window.confirm("Tạo 01 bài TEST ở trạng thái Draft trên Website ANCV? Hệ thống sẽ không Publish.")) return;
-      act("wordpress-draft", () => createWordPressDraft(content.id), "Bản nháp WordPress đã tạo.");
-    }}><Upload size={14} /> {wordpressCreated ? "Bản nháp WordPress đã tạo" : busy === "wordpress-draft" ? "Đang tạo bản nháp…" : "Tạo bản nháp WordPress"}</button></div>
+    <div className="publishing-row"><div><strong>Website</strong><small>{websitePublication?.status === "published" ? "Đã đăng" : websitePublication?.status === "scheduled" ? "Đã lên lịch" : wordpressReady ? "Sẵn sàng" : "Cần duyệt bài, SEO và ảnh chính"}</small></div><button className="primary" disabled={!!busy || !wordpressReady || ["published", "scheduled"].includes(websitePublication?.status ?? "")} onClick={() => setShowPublish(true)}><CalendarClock size={14} /> Đăng / Lên lịch</button></div>
     {socialPlatforms.map((platform) => {
       const copy = content.platformCopies?.[platform];
       const publication = content.platforms.find((item) => item.platform === platform);
       return <div className="publishing-row" key={platform}><div><strong>{platformLabels[platform]}</strong><small>{publication?.status === "published" ? "Đã đăng" : "Đăng thủ công"}</small></div>
-        <button className="secondary" disabled={!copy} onClick={() => navigator.clipboard.writeText(copy?.text ?? "")}><Clipboard size={14} /> Copy</button>
-        <button className="secondary" onClick={() => window.open(manualPlatformUrls[platform], "_blank", "noopener,noreferrer")}><ExternalLink size={14} /> Mở</button>
-        <button className="secondary" disabled={!!busy || publication?.status === "published"} onClick={() => { const url = window.prompt(`Post URL ${platformLabels[platform]} (không bắt buộc):`, ""); if (url === null) return; act(`article-manual-${platform}`, () => markManualPublished(content.id, platform, url.trim() || undefined), `Đã đánh dấu ${platformLabels[platform]} là đã đăng.`); }}><Check size={14} /> Đánh dấu đã đăng</button>
+        <button className="secondary" disabled={!!busy || copy?.status !== "approved" || publication?.status === "published"} onClick={() => act(`article-handoff-${platform}`, () => runSocialHandoff(content, platform, selectedImage), `Nội dung đã được sao chép. Hãy dán và đăng trên ${platformLabels[platform]}.`)}><ExternalLink size={14} /> Chuẩn bị đăng</button>
+        <button className="secondary" disabled={!!busy || publication?.status === "published"} onClick={() => { const url = window.prompt(`Post URL ${platformLabels[platform]} (không bắt buộc):`, ""); if (url === null) return; act(`article-manual-${platform}`, () => markManualPublished(content.id, platform, url.trim() || undefined), `Đã đánh dấu ${platformLabels[platform]} là đã đăng.`); }}><Check size={14} /> Đã đăng</button>
       </div>;
     })}
+    {showPublish && <PublishActionModal
+      label="Website"
+      busy={!!busy}
+      onClose={() => setShowPublish(false)}
+      onSubmit={(mode, scheduledAt) => {
+        setShowPublish(false);
+        act("wordpress-publish", () => publishWordPress(content.id, mode, scheduledAt), mode === "schedule" ? "Website đã lên lịch." : "Website đã đăng.");
+      }}
+    />}
   </section>;
 }
 
@@ -1782,21 +1767,19 @@ function PublishingPanel({
   busy: string;
   act: (k: string, a: () => Promise<unknown>, d: string) => void;
 }) {
+  const [showPublish, setShowPublish] = useState(false);
   const final = assets.find((asset) => asset.id === content.finalVideoAssetId);
   const youtubeCopy = content.platformCopies?.youtube;
   const youtubePublication = content.platforms.find((item) => item.platform === "youtube");
-  const contentApproved = Boolean(content.approvedAt) && ["approved", "ready_to_publish", "partially_published", "published"].includes(content.status);
-  const youtubeReady = Boolean(final?.storageType === "local" && youtubeCopy?.status === "approved" && contentApproved && youtubePublication?.status !== "published");
+  const contentApproved = Boolean(content.approvedAt) && ["approved", "ready_to_publish", "partially_published", "scheduled", "published"].includes(content.status);
+  const youtubeReady = Boolean(final?.storageType === "local" && youtubeCopy?.status === "approved" && contentApproved && !["published", "scheduled"].includes(youtubePublication?.status ?? ""));
   const manualPlatforms: Platform[] = ["facebook", "tiktok", "zalo", "linkedin"];
   return (
     <section className="publishing-panel">
-      <div className="section-title"><div><span className="step-label">Đăng video</span><h3>Phân phối</h3><small>YouTube dùng API Riêng tư; các nền tảng còn lại là bàn giao thủ công.</small></div></div>
+      <div className="section-title"><div><span className="step-label">Đăng video</span><h3>Phân phối</h3><small>Đăng YouTube hoặc chuẩn bị nội dung để đăng thủ công lên mạng xã hội.</small></div></div>
       <div className="publishing-row youtube-publishing-row">
-        <div><strong>YouTube</strong><small>{youtubePublication?.status === "published" ? "Đã tải lên Riêng tư" : youtubeCopy?.status === "approved" ? "Nội dung đã duyệt" : "Cần duyệt nội dung"}</small></div>
-        <button className="primary" disabled={!!busy || !youtubeReady} onClick={() => {
-          if (!window.confirm("Video sẽ được tải lên kênh Giải Pháp An Ninh Cảnh Vệ ở chế độ Riêng tư.")) return;
-          act("youtube-private", () => publishYouTubePrivate(content.id), "Đã tải video lên YouTube ở chế độ Riêng tư.");
-        }}><Upload size={14} /> {busy === "youtube-private" ? "Đang tải lên…" : "Tải lên YouTube"}</button>
+        <div><strong>YouTube</strong><small>{youtubePublication?.status === "published" ? "Đã đăng" : youtubePublication?.status === "scheduled" ? "Đã lên lịch" : youtubeReady ? "Sẵn sàng" : "Cần Video Final và nội dung đã duyệt"}</small></div>
+        <button className="primary" disabled={!!busy || !youtubeReady} onClick={() => setShowPublish(true)}><CalendarClock size={14} /> Đăng / Lên lịch</button>
       </div>
       {manualPlatforms.map((platform) => {
         const copy = content.platformCopies?.[platform];
@@ -1804,16 +1787,24 @@ function PublishingPanel({
         return (
           <div className="publishing-row" key={platform}>
             <div><strong>{platformLabels[platform]}</strong><small>{publication?.status === "published" ? "Đã đăng" : "Đăng thủ công"}</small></div>
-            <button className="secondary" disabled={!copy} onClick={() => navigator.clipboard.writeText(copy?.text ?? "")}><Clipboard size={14} /> Copy</button>
-            <button className="secondary" onClick={() => window.open(manualPlatformUrls[platform], "_blank", "noopener,noreferrer")}><ExternalLink size={14} /> Mở {platformLabels[platform]}</button>
+            <button className="secondary" disabled={!!busy || copy?.status !== "approved" || publication?.status === "published"} onClick={() => act(`handoff-${platform}`, () => runSocialHandoff(content, platform, final), `Nội dung đã được sao chép. Hãy dán và đăng trên ${platformLabels[platform]}.`)}><ExternalLink size={14} /> Chuẩn bị đăng</button>
             <button className="secondary" disabled={!!busy || publication?.status === "published"} onClick={() => {
               const url = window.prompt(`Post URL ${platformLabels[platform]} (không bắt buộc, có thể để trống):`, "");
               if (url === null) return;
               act(`manual-${platform}`, () => markManualPublished(content.id, platform, url.trim() || undefined), `Đã đánh dấu ${platformLabels[platform]} là đã đăng.`);
-            }}><Check size={14} /> Đánh dấu đã đăng</button>
+            }}><Check size={14} /> Đã đăng</button>
           </div>
         );
       })}
+      {showPublish && <PublishActionModal
+        label="YouTube"
+        busy={!!busy}
+        onClose={() => setShowPublish(false)}
+        onSubmit={(mode, scheduledAt) => {
+          setShowPublish(false);
+          act("youtube-publish", () => publishYouTube(content.id, mode, scheduledAt), mode === "schedule" ? "YouTube đã lên lịch." : "YouTube đã đăng.");
+        }}
+      />}
     </section>
   );
 }

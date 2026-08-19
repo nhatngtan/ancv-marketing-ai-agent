@@ -23,7 +23,7 @@ Core Marketing OS của Công ty An Ninh Cảnh Vệ. Hệ thống quản lý Co
 - Firebase Auth/Firestore/Storage/Hosting đã có cấu hình production; deployment chỉ chạy sau identity pre-flight.
 - Cloud Run backend có `/health`, `/connectors/health`, transaction Content ID, publishing/manual fallback và retry policy.
 - Workflows, Cloud Tasks, Scheduler và service-account bootstrap có script tái tạo.
-- YouTube đang `partially_available / semi_automatic`; WordPress read-only PASS; Flow `Available / Experimental`. GA4/GSC và các Social chưa cấu hình tiếp tục manual/safe mode, không chặn Core.
+- YouTube và WordPress dùng luồng bán tự động **Đăng / Lên lịch** có xác nhận, idempotency và fail-closed; lần ghi public/schedule vẫn chờ UAT được Owner cho phép. Flow `Available / Experimental`. GA4/GSC tiếp tục safe mode; Facebook/TikTok/Zalo/LinkedIn là Manual Social theo quyết định của Owner.
 
 ## AI Content Studio — Giai đoạn 2B
 
@@ -93,3 +93,5 @@ UAT production của luồng hoàn tất và đăng Video V1: [docs/UAT_VIDEO_CO
 Article SEO canonical, quality gate và WordPress read-only boundary: [docs/ARTICLE_SEO_WORKFLOW_V1.md](docs/ARTICLE_SEO_WORKFLOW_V1.md). Evidence UAT: [docs/UAT_ARTICLE_SEO_WORKFLOW_V1.md](docs/UAT_ARTICLE_SEO_WORKFLOW_V1.md).
 
 WordPress Draft V1, idempotency và evidence Post/Media thật: [docs/UAT_WORDPRESS_DRAFT_V1.md](docs/UAT_WORDPRESS_DRAFT_V1.md).
+
+Simple Automation V1.1 — Auto Final, Đăng/Lên lịch, Social Handoff và báo cáo tuần: [docs/SIMPLE_AUTOMATION_V1_1.md](docs/SIMPLE_AUTOMATION_V1_1.md).

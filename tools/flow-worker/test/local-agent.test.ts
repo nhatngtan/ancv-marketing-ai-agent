@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowAccountRecord, FlowJobRecord } from '@ancv/shared';
-import { assertLocalFinalRelativePath, buildLocalFinalAsset, localFinalFolderRelativePath, localVideoRelativePath } from '../src/local-storage.js';
+import { assertLocalFinalRelativePath, buildLocalFinalAsset, LocalFinalStabilityRegistry, LocalFinalStabilityTracker, localFinalFolderRelativePath, localVideoRelativePath } from '../src/local-storage.js';
 import { pathInsideWorkspace, type LocalAgentConfig } from '../src/config.js';
 import { findNewFlowOutputIds } from '../src/flow-ui.js';
 import { downloadReadinessFailure, findNewCompletedDownloads, flowJobTempRelativePath, runDownloadReadinessStateMachine } from '../src/worker.js';
@@ -40,6 +40,41 @@ describe('local-first paths', () => {
   it('rejects an absolute or nested Final path', () => {
     expect(() => assertLocalFinalRelativePath('ANCV-VID-2026-004', 'D:/Final/final.mp4')).toThrow('LOCAL_FINAL_PATH_INVALID');
     expect(() => assertLocalFinalRelativePath('ANCV-VID-2026-004', 'Projects/ANCV-VID-2026-004/Video Final/sub/final.mp4')).toThrow('LOCAL_FINAL_PATH_INVALID');
+  });
+});
+
+describe('automatic Video Final stability', () => {
+  const first = { relativePath: 'Projects/ANCV-VID-2026-004/Video Final/final.mp4', sizeBytes: 2048, modifiedAtMs: 100 };
+  const second = { relativePath: 'Projects/ANCV-VID-2026-004/Video Final/final-v2.mp4', sizeBytes: 4096, modifiedAtMs: 200 };
+
+  it('does not register while a file is still changing and becomes stable only after the wait window', () => {
+    const tracker = new LocalFinalStabilityTracker(10_000);
+    expect(tracker.observe([first], 0)).toEqual([]);
+    expect(tracker.observe([{ ...first, sizeBytes: 3072, modifiedAtMs: 150 }], 8_000)).toEqual([]);
+    expect(tracker.observe([{ ...first, sizeBytes: 3072, modifiedAtMs: 150 }], 17_999)).toEqual([]);
+    expect(tracker.observe([{ ...first, sizeBytes: 3072, modifiedAtMs: 150 }], 18_000)).toEqual([first.relativePath]);
+  });
+
+  it('returns each stable path once per scan so the caller can refuse ambiguous multiple files', () => {
+    const tracker = new LocalFinalStabilityTracker(1_000);
+    expect(tracker.observe([first, second], 0)).toEqual([]);
+    expect(tracker.observe([first, second], 1_000)).toEqual([first.relativePath, second.relativePath].sort());
+  });
+
+  it('keeps stability isolated when different Content folders are scanned between polls', () => {
+    const registry = new LocalFinalStabilityRegistry(1_000);
+    const other = { ...first, relativePath: 'Projects/ANCV-VID-2026-005/Video Final/final.mp4' };
+    expect(registry.observe('ANCV-VID-2026-004', [first], 0)).toEqual([]);
+    expect(registry.observe('ANCV-VID-2026-005', [other], 0)).toEqual([]);
+    expect(registry.observe('ANCV-VID-2026-004', [first], 1_000)).toEqual([first.relativePath]);
+    expect(registry.observe('ANCV-VID-2026-005', [other], 1_000)).toEqual([other.relativePath]);
+  });
+
+  it('drops a disappeared file and does not treat its replacement as already stable', () => {
+    const tracker = new LocalFinalStabilityTracker(1_000);
+    tracker.observe([first], 0);
+    expect(tracker.observe([], 2_000)).toEqual([]);
+    expect(tracker.observe([first], 3_000)).toEqual([]);
   });
 });
 

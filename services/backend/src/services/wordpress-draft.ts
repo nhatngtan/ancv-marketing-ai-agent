@@ -1,4 +1,4 @@
-import type { ContentRecord, MediaAssetRecord, WordPressDraftJobRecord, WordPressDraftState } from '@ancv/shared';
+import { aggregatePublishingStatus, type ContentRecord, type MediaAssetRecord, type PlatformPublication, type WordPressDraftJobRecord, type WordPressDraftState, type WordPressPublishingJobRecord } from '@ancv/shared';
 import { db, storageBucket } from '../firebase.js';
 import { config } from '../config.js';
 import { assertWordPressDraftEligibility, wordpressDraftJobId } from './wordpress-draft-safety.js';
@@ -13,6 +13,7 @@ interface WordPressPost {
   title?: { raw?: string; rendered?: string };
   content?: { raw?: string; rendered?: string };
   featured_media?: number;
+  date_gmt?: string;
 }
 
 interface WordPressMedia {
@@ -133,11 +134,10 @@ async function completeDraft(jobRef: FirebaseFirestore.DocumentReference, conten
   return { job: snapshot.data() as WordPressDraftJobRecord, draft, duplicateCount, idempotentReplay: false };
 }
 
-export async function createWordPressDraftUat(contentDocId: string, uid: string): Promise<WordPressDraftResult> {
+export async function createWordPressDraft(contentDocId: string, uid: string): Promise<WordPressDraftResult> {
   const contentSnapshot = await db().collection('contents').doc(contentDocId).get();
   if (!contentSnapshot.exists) throw httpError('CONTENT_NOT_FOUND', 404);
   const content = { id: contentSnapshot.id, ...contentSnapshot.data() } as ContentRecord;
-  if (!content.testContent) throw httpError('WORDPRESS_UAT_FIXTURE_ONLY', 409);
   if (!content.selectedImageId) throw httpError('WORDPRESS_FEATURED_IMAGE_REQUIRED', 409);
   const assetSnapshot = await db().collection('mediaAssets').doc(content.selectedImageId).get();
   if (!assetSnapshot.exists) throw httpError('WORDPRESS_FEATURED_IMAGE_NOT_FOUND', 409);
@@ -214,6 +214,109 @@ export async function createWordPressDraftUat(contentDocId: string, uid: string)
     return completeDraft(jobRef, content, uid, baseUrl, verified.post, verified.media, yoastMetadata, verified.duplicateCount);
   } catch (error) {
     await jobRef.set({ status: 'needs_manual', error: error instanceof Error ? error.message : 'WORDPRESS_DRAFT_UNKNOWN_ERROR', updatedAt: new Date().toISOString() }, { merge: true });
+    throw error;
+  }
+}
+
+export const createWordPressDraftUat = createWordPressDraft;
+
+export function wordpressPublishJobId(contentDocId: string): string {
+  return `wordpress-publish-${contentDocId}`;
+}
+
+export function wordpressPublishPayload(mode: 'now' | 'schedule', scheduledAt?: string): JsonRecord {
+  if (mode === 'now') return { status: 'publish' };
+  if (!scheduledAt || !Number.isFinite(Date.parse(scheduledAt)) || Date.parse(scheduledAt) <= Date.now()) throw httpError('WORDPRESS_SCHEDULE_INVALID', 409);
+  return { status: 'future', date_gmt: new Date(scheduledAt).toISOString().replace(/\.\d{3}Z$/, '') };
+}
+
+function updateWebsitePublication(current: PlatformPublication[], mode: 'now' | 'schedule', now: string, scheduledAt?: string): PlatformPublication[] {
+  const changes: PlatformPublication = {
+    platform: 'website', mode: 'semi_automatic', status: mode === 'schedule' ? 'scheduled' : 'published',
+    ...(mode === 'schedule' ? { scheduledAt } : { publishedAt: now }),
+  };
+  return current.some((item) => item.platform === 'website')
+    ? current.map((item) => item.platform === 'website' ? { ...item, ...changes } : item)
+    : [...current, changes];
+}
+
+function scheduledTimeMatches(post: WordPressPost, scheduledAt?: string): boolean {
+  if (!scheduledAt) return true;
+  const raw = post.date_gmt ?? '';
+  const actual = Date.parse(raw.endsWith('Z') ? raw : `${raw}Z`);
+  return Number.isFinite(actual) && Math.abs(actual - Date.parse(scheduledAt)) < 1_000;
+}
+
+export async function publishWordPressContent(contentDocId: string, uid: string, mode: 'now' | 'schedule', scheduledAt?: string) {
+  let snapshot = await db().collection('contents').doc(contentDocId).get();
+  if (!snapshot.exists) throw httpError('CONTENT_NOT_FOUND', 404);
+  let content = { id: snapshot.id, ...snapshot.data() } as ContentRecord;
+  if (content.type !== 'article' || !content.approvedAt || !['approved', 'ready_to_publish', 'partially_published', 'scheduled'].includes(content.status)) throw httpError('WORDPRESS_ARTICLE_APPROVAL_REQUIRED', 409);
+  if (!content.wordpressDraft?.postId) {
+    await createWordPressDraft(contentDocId, uid);
+    snapshot = await db().collection('contents').doc(contentDocId).get();
+    content = { id: snapshot.id, ...snapshot.data() } as ContentRecord;
+  }
+  if (!content.wordpressDraft?.postId) throw httpError('WORDPRESS_DRAFT_REQUIRED', 409);
+  const baseUrl = exactBaseUrl(config.wordpressBaseUrl);
+  if (exactBaseUrl(content.wordpressDraft.siteUrl) !== baseUrl) throw httpError('WORDPRESS_SITE_MISMATCH', 409);
+  const payload = wordpressPublishPayload(mode, scheduledAt);
+  const expectedStatus = mode === 'schedule' ? 'future' : 'publish';
+  const jobRef = db().collection('publishingJobs').doc(wordpressPublishJobId(content.id));
+  const existing = await jobRef.get();
+  if (existing.exists) {
+    const job = existing.data() as WordPressPublishingJobRecord;
+    const post = await wpRequest<WordPressPost>(baseUrl, `/wp-json/wp/v2/posts/${content.wordpressDraft.postId}?context=edit`);
+    if (job.status === 'succeeded' && post.status === expectedStatus && hasMarker(post, content.contentId) && scheduledTimeMatches(post, scheduledAt)) {
+      return { job, wordpress: content.wordpressDraft, idempotentReplay: true };
+    }
+    throw httpError('WORDPRESS_PUBLISH_JOB_REQUIRES_MANUAL_REVIEW', 409);
+  }
+  const now = new Date().toISOString();
+  const job: WordPressPublishingJobRecord = {
+    id: jobRef.id, platform: 'website', operation: mode === 'schedule' ? 'schedule' : 'publish_now',
+    contentDocId: content.id, contentId: content.contentId, wordpressPostId: content.wordpressDraft.postId,
+    idempotencyKey: jobRef.id, status: 'processing', ...(scheduledAt ? { scheduledAt } : {}),
+    createdAt: now, updatedAt: now, createdBy: uid, error: null,
+  };
+  try {
+    await jobRef.create(job);
+  } catch (error) {
+    const concurrent = await jobRef.get();
+    if (concurrent.exists) throw httpError('WORDPRESS_PUBLISH_JOB_ALREADY_RUNNING', 409);
+    throw error;
+  }
+  try {
+    const before = await wpRequest<WordPressPost>(baseUrl, `/wp-json/wp/v2/posts/${content.wordpressDraft.postId}?context=edit`);
+    if (!hasMarker(before, content.contentId)) throw httpError('WORDPRESS_POST_IDENTITY_MISMATCH', 409);
+    let post: WordPressPost;
+    try {
+      post = await wpRequest<WordPressPost>(baseUrl, `/wp-json/wp/v2/posts/${before.id}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+      }, 120_000);
+    } catch (error) {
+      const recovered = await wpRequest<WordPressPost>(baseUrl, `/wp-json/wp/v2/posts/${before.id}?context=edit`);
+      if (recovered.status !== expectedStatus || !scheduledTimeMatches(recovered, scheduledAt)) throw error;
+      post = recovered;
+    }
+    const verified = await wpRequest<WordPressPost>(baseUrl, `/wp-json/wp/v2/posts/${post.id}?context=edit`);
+    if (verified.id !== before.id || verified.status !== expectedStatus || !hasMarker(verified, content.contentId) || !scheduledTimeMatches(verified, scheduledAt)) throw httpError('WORDPRESS_PUBLISH_VERIFICATION_FAILED', 502);
+    const completedAt = new Date().toISOString();
+    const wordpress: WordPressDraftState = {
+      ...content.wordpressDraft, status: expectedStatus,
+      ...(mode === 'schedule' ? { scheduledAt } : { publishedAt: completedAt }),
+    };
+    const platforms = updateWebsitePublication(content.platforms ?? [], mode, completedAt, scheduledAt);
+    const completed: Partial<WordPressPublishingJobRecord> = { status: 'succeeded', completedAt, updatedAt: completedAt, error: null };
+    const batch = db().batch();
+    batch.set(jobRef, completed, { merge: true });
+    batch.update(snapshot.ref, { wordpressDraft: wordpress, platforms, status: mode === 'schedule' ? 'scheduled' : aggregatePublishingStatus(platforms), updatedAt: completedAt });
+    const auditRef = db().collection('auditLogs').doc();
+    batch.set(auditRef, { id: auditRef.id, status: 'recorded', action: mode === 'schedule' ? 'wordpress.schedule' : 'wordpress.publish', entityType: 'content', entityId: content.id, detail: { postId: verified.id, siteUrl: baseUrl, ...(scheduledAt ? { scheduledAt } : {}) }, createdAt: completedAt, updatedAt: completedAt, createdBy: uid });
+    await batch.commit();
+    return { job: { ...job, ...completed }, wordpress, idempotentReplay: false };
+  } catch (error) {
+    await jobRef.set({ status: 'needs_manual', error: error instanceof Error ? error.message : 'WORDPRESS_PUBLISH_UNKNOWN_ERROR', updatedAt: new Date().toISOString() }, { merge: true });
     throw error;
   }
 }

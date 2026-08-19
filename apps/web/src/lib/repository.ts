@@ -132,6 +132,7 @@ export async function regeneratePrompt(contentId: string, sceneId: string) { ret
 export async function createFlowJob(contentDocId: string, sceneId: string, flowAccountId: string, current: { generationPrompt: string; durationEstimate: number; aspectRatio: '9:16' | '16:9' }) { return trackedApi<{job:FlowJobRecord}>('create_flow_job', '/v1/flow/jobs', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, flowAccountId, ...current }) }, { contentId: contentDocId, sceneId }); }
 export async function openSceneFolder(contentDocId: string, sceneId: string) { return api('/v1/flow/local-commands/open-scene-folder', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, agentId: 'ancv-windows-01' }) }); }
 export async function openVideoFolder(contentDocId: string) { return api('/v1/flow/local-commands/open-video-folder', { method: 'POST', body: JSON.stringify({ contentDocId, agentId: 'ancv-windows-01' }) }); }
+export async function openMediaAsset(contentDocId: string, assetId: string) { return api('/v1/flow/local-commands/open-media', { method: 'POST', body: JSON.stringify({ contentDocId, assetId, agentId: 'ancv-windows-01' }) }); }
 export async function waitLocalCommand(commandId: string, timeoutMs = 120_000): Promise<LocalCommandRecord> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -190,9 +191,9 @@ export async function markReady(contentId: string) { return api(`/v1/content/${c
 export async function setContentStatus(contentId: string, status: string) { return api(`/v1/content/${contentId}/status`, { method: 'POST', body: JSON.stringify({ status }) }); }
 export async function markManualPublished(contentId: string, platform: Platform, postUrl?: string, note?: string) { return api(`/v1/content/${contentId}/manual-publish`, { method: 'POST', body: JSON.stringify({ platform, ...(postUrl ? { postUrl } : {}), note }) }); }
 export async function createWordPressDraft(contentId: string) { return api<{job:WordPressDraftJobRecord;draft:WordPressDraftState;duplicateCount:number;idempotentReplay:boolean}>(`/v1/publishing/wordpress/${contentId}/draft`, { method: 'POST', body: '{}' }, 180_000); }
+export async function publishWordPress(contentId: string, mode: 'now' | 'schedule', scheduledAt?: string) { return api(`/v1/publishing/wordpress/${contentId}/publish`, { method: 'POST', body: JSON.stringify({ mode, ...(scheduledAt ? { scheduledAt } : {}), confirmed: true, idempotencyKey: crypto.randomUUID() }) }, 180_000); }
 export async function getYouTubePublishingJob(jobId: string) { return api<{job:PublishingJobRecord}>(`/v1/publishing/youtube/jobs/${jobId}`); }
-export async function publishYouTubePrivate(contentId: string): Promise<PublishingJobRecord> {
-  const started = await api<{job:PublishingJobRecord}> (`/v1/publishing/youtube/${contentId}/private`, { method: 'POST', body: JSON.stringify({ confirmPrivate: true, idempotencyKey: crypto.randomUUID() }) });
+async function finishYouTubePublishing(started: { job: PublishingJobRecord }): Promise<PublishingJobRecord> {
   let job = started.job;
   const stagingDeadline = Date.now() + 30 * 60_000;
   while (job.status === 'staging' && Date.now() < stagingDeadline) {
@@ -214,6 +215,14 @@ export async function publishYouTubePrivate(contentId: string): Promise<Publishi
   const executed = await api<{job:PublishingJobRecord}>(`/v1/publishing/youtube/jobs/${job.id}/execute`, { method: 'POST', body: '{}' }, 35 * 60_000);
   if (executed.job.status !== 'succeeded') throw new Error(executed.job.error || 'YouTube upload cần xử lý thủ công.');
   return executed.job;
+}
+export async function publishYouTubePrivate(contentId: string): Promise<PublishingJobRecord> {
+  const started = await api<{job:PublishingJobRecord}> (`/v1/publishing/youtube/${contentId}/private`, { method: 'POST', body: JSON.stringify({ confirmPrivate: true, idempotencyKey: crypto.randomUUID() }) });
+  return finishYouTubePublishing(started);
+}
+export async function publishYouTube(contentId: string, mode: 'now' | 'schedule', scheduledAt?: string): Promise<PublishingJobRecord> {
+  const started = await api<{job:PublishingJobRecord}>(`/v1/publishing/youtube/${contentId}/publish`, { method: 'POST', body: JSON.stringify({ mode, ...(scheduledAt ? { scheduledAt } : {}), confirmed: true, idempotencyKey: crypto.randomUUID() }) });
+  return finishYouTubePublishing(started);
 }
 export async function savePlatformCopy(contentId: string, platform: Platform, copy: PlatformCopy) { if (!firestore) return; await updateDoc(doc(firestore, 'contents', contentId), { [`platformCopies.${platform}`]: { ...copy, editedAt: new Date().toISOString() }, updatedAt: serverTimestamp() }); }
 

@@ -10,6 +10,8 @@ Cập nhật: 2026-08-15. Chỉ đánh dấu PASS khi request thật đã thành
 | TikTok | Chưa có Developer App/token | Direct Post/Upload-to-inbox NOT TESTED | Display/metrics NOT TESTED | Audit chưa bắt đầu; internal-only Direct Post use case không được guideline chấp nhận | Thủ công | `MANUAL_ONLY`; chưa xác minh creator account |
 | LinkedIn | Chưa có App/token | Posts API NOT TESTED | Organization analytics NOT TESTED | Community Management Development/Standard review chưa bắt đầu | Thủ công | `NEED_ACCOUNT_SETUP`; chưa xác minh Organization URN/Page role |
 | Zalo | Chưa có Zalo App/OA token | Article/video OA API NOT TESTED | OA analytics NOT TESTED | OA/App/plan chưa xác minh | Thủ công | `NEED_ACCOUNT_SETUP`; contact link không phải OA ID evidence |
+
+> Quyết định Owner ngày 2026-08-19: onboarding API Facebook/TikTok/Zalo/LinkedIn **DEFERRED BY OWNER**. Các kết quả feasibility lịch sử được giữ làm evidence; production dùng Manual Social Handoff.
 | Website | Application Password + authenticated `/users/me` PASS | Media upload + đúng 01 Draft PASS; publish/schedule NOT TESTED | Chưa test | N/A | Bán tự động | Post `801`, Media `800`; live UAT giữ draft, không publish |
 | GA4 | Runtime Service Account list PASS | N/A | Chưa PASS `runReport` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development cũng không thấy property ANCV |
 | Search Console | Runtime Service Account list PASS | N/A | Chưa PASS `searchAnalytics.query` | N/A | Thủ công | Service Account thấy 0 property; tài khoản development không có `anninhcanhve.com` |
