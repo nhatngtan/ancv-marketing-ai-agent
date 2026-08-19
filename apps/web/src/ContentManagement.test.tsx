@@ -42,8 +42,9 @@ describe('ContentManagementPage', () => {
     render(<ContentManagementPage contents={[video, article]} localAgents={[onlineAgent]} onOpenContent={onOpen} onToast={vi.fn()} loadSettings={async () => settings}/>);
     await screen.findByRole('columnheader', { name: 'Kênh' });
     const table = screen.getByRole('table');
+    expect(within(table).queryByRole('columnheader', { name: 'Mã' })).toBeNull();
     expect(within(table).queryByRole('columnheader', { name: 'YouTube' })).toBeNull();
-    expect(within(table).getAllByText('ANCV-VID-2026-001').length).toBeGreaterThan(0);
+    expect(within(table).queryByText('ANCV-VID-2026-001')).toBeNull();
     expect(within(table).getAllByText('Đã lên lịch').length).toBeGreaterThan(0);
     expect(within(table).getAllByText('YouTube').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Tổng hợp Content')).not.toBeNull();

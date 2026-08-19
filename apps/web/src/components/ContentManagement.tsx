@@ -102,10 +102,9 @@ export function ContentManagementPage({
       </div>
       <div className="management-table-wrap">
         <table className="management-table">
-          <thead><tr><th className="management-code-column">Mã</th><th className="management-title-column">Nội dung</th><th className="management-type-column">Loại</th><th className="management-status-column">Tình trạng</th><th className="management-channel-column">Kênh</th><th className="management-folder-column">Thư mục</th><th className="management-updated-column">Cập nhật</th></tr></thead>
+          <thead><tr><th className="management-title-column">Nội dung</th><th className="management-type-column">Loại</th><th className="management-status-column">Tình trạng</th><th className="management-channel-column">Kênh</th><th className="management-folder-column">Thư mục</th><th className="management-updated-column">Cập nhật</th></tr></thead>
           <tbody>{filtered.map((content) => <tr key={content.id}>
-            <td className="management-code-column"><span className="content-code">{content.contentId}</span></td>
-            <td className="management-title-column"><button className="content-name-button" onClick={() => onOpenContent(content)}>{content.title}</button><span className="content-code-mobile">{content.contentId}</span></td>
+            <td className="management-title-column"><button className="content-name-button" onClick={() => onOpenContent(content)}>{content.title}</button></td>
             <td className="management-type-column"><Badge tone={content.type === 'video' ? 'info' : 'neutral'}>{content.type === 'video' ? 'Video' : 'Bài viết'}</Badge></td>
             <td className="management-status-column"><Badge tone={['published','completed'].includes(content.status) ? 'success' : ['review','post_production','scheduled'].includes(content.status) ? 'warning' : 'info'}>{managementContentStatusLabel(content.status)}</Badge></td>
             <td className="management-channel-column"><div className="channel-status-list">{visibleChannels.map((channel) => <span className={`channel-status-chip ${channelStatusForContent(content, channel.id)}`} key={channel.id}><b>{channel.name}</b><ChannelStatus value={channelStatusForContent(content, channel.id)}/></span>)}</div></td>
