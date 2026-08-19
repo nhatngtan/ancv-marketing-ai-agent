@@ -65,6 +65,14 @@ export function isOfficialFlowProjectUrl(value: string): boolean {
   }
 }
 
+export function contentProjectFolder(content: Pick<ContentRecord, 'contentId' | 'type'>): string {
+  const prefix = content.type === 'video' ? 'VID' : content.type === 'article' ? 'ART' : '';
+  if (!prefix || !new RegExp(`^ANCV-${prefix}-\\d{4}-[A-Z0-9-]+$`).test(content.contentId)) {
+    throw Object.assign(new Error('LOCAL_FOLDER_METADATA_INVALID'), { statusCode: 409 });
+  }
+  return `Projects/${content.contentId}`;
+}
+
 export async function createFlowJobWithCurrentState(input: z.infer<typeof createJobSchema>, uid: string, store: Firestore = db()): Promise<FlowJobRecord> {
   const contentRef = store.collection('contents').doc(input.contentDocId);
   const sceneRef = store.collection('scenes').doc(input.sceneId);
@@ -227,6 +235,19 @@ flowRouter.post('/local-commands/open-video-folder', requireFirebaseEditor, asyn
     if (!/^ANCV-VID-\d{4}-[A-Z0-9-]+$/.test(contentId)) throw Object.assign(new Error('LOCAL_FOLDER_METADATA_INVALID'), { statusCode: 409 });
     const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
     const command = { id: ref.id, agentId: input.agentId, command: 'open_folder' as const, relativePath: `Projects/${contentId}`, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
+    await ref.set(command); response.status(201).json({ command });
+  } catch (error) { next(error); }
+});
+
+flowRouter.post('/local-commands/open-content-folder', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = openVideoFolderSchema.parse(request.body);
+    if (!await localAgentOnline(input.agentId)) throw Object.assign(new Error('LOCAL_AGENT_OFFLINE'), { statusCode: 409 });
+    const snapshot = await db().collection('contents').doc(input.contentDocId).get();
+    if (!snapshot.exists) throw Object.assign(new Error('CONTENT_NOT_FOUND'), { statusCode: 404 });
+    const relativePath = contentProjectFolder(snapshot.data() as Pick<ContentRecord, 'contentId' | 'type'>);
+    const now = new Date().toISOString(); const ref = db().collection('localCommands').doc();
+    const command = { id: ref.id, agentId: input.agentId, command: 'open_folder' as const, relativePath, status: 'queued' as const, error: null, createdAt: now, updatedAt: now, createdBy: response.locals.identity.uid };
     await ref.set(command); response.status(201).json({ command });
   } catch (error) { next(error); }
 });

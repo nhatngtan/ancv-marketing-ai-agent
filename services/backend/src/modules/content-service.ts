@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
-import { aggregatePublishingStatus, evaluateArticleSeo, type CompanyProfile, type ContentRecord, type MediaAssetRecord, type PlatformPublication } from '@ancv/shared';
+import { CONTENT_MANAGEMENT_CHANNEL_IDS, aggregatePublishingStatus, evaluateArticleSeo, type CompanyProfile, type ContentManagementSettings, type ContentRecord, type MediaAssetRecord, type PlatformPublication } from '@ancv/shared';
 import { allocateContentId, createContentWithId } from '../services/content-id.js';
-import { requireFirebaseAdmin, requireFirebaseEditor } from '../middleware/auth.js';
+import { requireFirebaseAdmin, requireFirebaseEditor, requireFirebaseUser } from '../middleware/auth.js';
 import { db } from '../firebase.js';
 
 export const contentRouter = Router();
@@ -22,6 +22,21 @@ const createContentSchema = z.discriminatedUnion('type', [
     platforms: z.array(z.enum(['website', 'facebook', 'zalo', 'linkedin'])).min(1).max(4).optional(), ...operationFields,
   }).strict(),
 ]);
+const contentManagementSettingsSchema = z.object({
+  enabledChannels: z.array(z.enum(CONTENT_MANAGEMENT_CHANNEL_IDS)).max(CONTENT_MANAGEMENT_CHANNEL_IDS.length),
+  customChannels: z.array(z.object({
+    id: z.string().regex(/^custom-[a-z0-9][a-z0-9-]{0,47}$/),
+    name: z.string().trim().min(1).max(80),
+    enabled: z.boolean(),
+  }).strict()).max(10),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.enabledChannels).size !== value.enabledChannels.length) context.addIssue({ code: 'custom', message: 'DUPLICATE_DEFAULT_CHANNEL' });
+  if (new Set(value.customChannels.map((item) => item.id)).size !== value.customChannels.length) context.addIssue({ code: 'custom', message: 'DUPLICATE_CUSTOM_CHANNEL' });
+});
+const defaultContentManagementSettings: ContentManagementSettings = {
+  enabledChannels: [...CONTENT_MANAGEMENT_CHANNEL_IDS],
+  customChannels: [],
+};
 
 const sceneFields = {
   sceneNumber: z.number().int().min(1).max(999), title: z.string().min(1).max(200), durationEstimate: z.number().int().min(1).max(120),
@@ -104,6 +119,32 @@ contentRouter.put('/company-profile', requireFirebaseAdmin, async (request, resp
     const now = new Date().toISOString(); const uid = response.locals.identity.uid;
     await db().collection('systemSettings').doc('companyProfile').set({ id: 'companyProfile', status: 'active', createdAt: now, createdBy: uid, ...input, updatedAt: now, updatedBy: uid }, { merge: true });
     await audit(uid, 'company_profile.update', 'companyProfile'); response.json({ ...input, updatedAt: now, updatedBy: uid });
+  } catch (error) { next(error); }
+});
+
+contentRouter.get('/content-management-settings', requireFirebaseUser, async (_request, response, next) => {
+  try {
+    const snapshot = await db().collection('systemSettings').doc('contentManagement').get();
+    if (!snapshot.exists) { response.json(defaultContentManagementSettings); return; }
+    const data = snapshot.data() ?? {};
+    const parsed = contentManagementSettingsSchema.safeParse({
+      enabledChannels: data.enabledChannels,
+      customChannels: data.customChannels,
+    });
+    response.json(parsed.success ? { ...parsed.data, updatedAt: data.updatedAt, updatedBy: data.updatedBy } : defaultContentManagementSettings);
+  } catch (error) { next(error); }
+});
+
+contentRouter.put('/content-management-settings', requireFirebaseEditor, async (request, response, next) => {
+  try {
+    const input = contentManagementSettingsSchema.parse(request.body);
+    const now = new Date().toISOString(); const uid = response.locals.identity.uid as string;
+    const reference = db().collection('systemSettings').doc('contentManagement');
+    const existing = await reference.get();
+    const record = { id: 'contentManagement', status: 'active', ...input, updatedAt: now, updatedBy: uid };
+    await reference.set({ ...record, createdAt: existing.data()?.createdAt ?? now, createdBy: existing.data()?.createdBy ?? uid }, { merge: true });
+    await audit(uid, 'content_management.settings.update', 'contentManagement', { customChannelCount: input.customChannels.length });
+    response.json(record);
   } catch (error) { next(error); }
 });
 

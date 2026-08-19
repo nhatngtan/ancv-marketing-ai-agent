@@ -23,6 +23,19 @@ export const CONTENT_STATUSES = [
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 export type ContentPriority = 'normal' | 'high';
 export type PublishingStatus = 'pending' | 'processing' | 'scheduled' | 'published' | 'needs_action' | 'manual_pending' | 'failed' | 'skipped';
+export const CONTENT_MANAGEMENT_CHANNEL_IDS = ['website', 'youtube', 'facebook', 'tiktok', 'zalo', 'linkedin'] as const;
+export type ContentManagementChannelId = (typeof CONTENT_MANAGEMENT_CHANNEL_IDS)[number];
+export interface ContentManagementCustomChannel {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+export interface ContentManagementSettings {
+  enabledChannels: ContentManagementChannelId[];
+  customChannels: ContentManagementCustomChannel[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
 export type AIJobStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type FlowAccountStatus = 'ready' | 'needs_login' | 'needs_verification' | 'unavailable';
 export type FlowJobStatus = 'queued' | 'processing' | 'succeeded' | 'needs_manual';

@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MarketingDashboardResponse, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord, type WordPressDraftJobRecord, type WordPressDraftState } from '@ancv/shared';
+import { CONTENT_MANAGEMENT_CHANNEL_IDS, DEFAULT_CONNECTORS, type AIUsageRecord, type ArticleSeoData, type BrowserPlatform, type BrowserProfileSettings, type CompanyProfile, type ConnectorRecord, type ContentManagementSettings, type ContentRecord, type FlowAccountRecord, type FlowJobRecord, type LocalAgentRecord, type LocalCommandRecord, type LocalFinalCandidate, type MarketingDashboardResponse, type MediaAssetRecord, type Platform, type PlatformCopy, type PublishingJobRecord, type Role, type SceneRecord, type WordPressDraftJobRecord, type WordPressDraftState } from '@ancv/shared';
 import { auth, firebaseConfigured, firestore, storage } from './firebase';
 
 type TrackedOperation = 'create_content' | 'create_scenes' | 'create_flow_job';
@@ -81,6 +81,22 @@ export function subscribeMonthlyAIUsage(callback: (summary: { requests: number; 
   return onSnapshot(collection(firestore, 'aiUsage'), (snapshot) => { const records = snapshot.docs.map((item) => item.data() as AIUsageRecord).filter((item) => String(item.createdAt).startsWith(month)); callback({ requests: records.length, totalTokens: records.reduce((sum,item) => sum + Number(item.totalTokens ?? 0),0), images: records.reduce((sum,item) => sum + Number(item.imageCount ?? 0),0) }); });
 }
 
+export async function getContentManagementSettings(): Promise<ContentManagementSettings> {
+  if (!firebaseConfigured) {
+    try { return JSON.parse(localStorage.getItem('ancv-content-management-settings') ?? 'null') ?? { enabledChannels: [...CONTENT_MANAGEMENT_CHANNEL_IDS], customChannels: [] }; }
+    catch { return { enabledChannels: [...CONTENT_MANAGEMENT_CHANNEL_IDS], customChannels: [] }; }
+  }
+  return api<ContentManagementSettings>('/v1/content/content-management-settings');
+}
+
+export async function saveContentManagementSettings(settings: ContentManagementSettings): Promise<ContentManagementSettings> {
+  if (!firebaseConfigured) {
+    localStorage.setItem('ancv-content-management-settings', JSON.stringify(settings));
+    return settings;
+  }
+  return api<ContentManagementSettings>('/v1/content/content-management-settings', { method: 'PUT', body: JSON.stringify(settings) });
+}
+
 export function buildCreateContentPayload(input: CreateContentInput): CreateContentInput {
   if (input.type === 'video') return {
     type: 'video', title: input.title.trim(),
@@ -132,6 +148,10 @@ export async function regeneratePrompt(contentId: string, sceneId: string) { ret
 export async function createFlowJob(contentDocId: string, sceneId: string, flowAccountId: string, current: { generationPrompt: string; durationEstimate: number; aspectRatio: '9:16' | '16:9' }) { return trackedApi<{job:FlowJobRecord}>('create_flow_job', '/v1/flow/jobs', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, flowAccountId, ...current }) }, { contentId: contentDocId, sceneId }); }
 export async function openSceneFolder(contentDocId: string, sceneId: string) { return api('/v1/flow/local-commands/open-scene-folder', { method: 'POST', body: JSON.stringify({ contentDocId, sceneId, agentId: 'ancv-windows-01' }) }); }
 export async function openVideoFolder(contentDocId: string) { return api('/v1/flow/local-commands/open-video-folder', { method: 'POST', body: JSON.stringify({ contentDocId, agentId: 'ancv-windows-01' }) }); }
+export async function openContentFolder(contentDocId: string): Promise<LocalCommandRecord> {
+  const { command } = await api<{command:LocalCommandRecord}>('/v1/flow/local-commands/open-content-folder', { method: 'POST', body: JSON.stringify({ contentDocId, agentId: 'ancv-windows-01' }) });
+  return waitLocalCommand(command.id, 30_000);
+}
 export async function openMediaAsset(contentDocId: string, assetId: string) { return api('/v1/flow/local-commands/open-media', { method: 'POST', body: JSON.stringify({ contentDocId, assetId, agentId: 'ancv-windows-01' }) }); }
 export async function waitLocalCommand(commandId: string, timeoutMs = 120_000): Promise<LocalCommandRecord> {
   const deadline = Date.now() + timeoutMs;

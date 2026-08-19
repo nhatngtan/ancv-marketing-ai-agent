@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { buildAIJobId } from '../src/services/ai-job.js';
 import { createApp } from '../src/app.js';
-import { isOfficialFlowProjectUrl } from '../src/modules/flow-service.js';
+import { contentProjectFolder, isOfficialFlowProjectUrl } from '../src/modules/flow-service.js';
 
 describe('AI Content Studio cost and security controls', () => {
   it('builds the same job id for duplicate clicks', () => {
@@ -46,5 +46,19 @@ describe('AI Content Studio cost and security controls', () => {
     expect(isOfficialFlowProjectUrl('https://labs.google/fx/tools/flow/project/project-1')).toBe(true);
     expect(isOfficialFlowProjectUrl('https://example.com/fx/vi/tools/flow/project/project-1')).toBe(false);
     expect(isOfficialFlowProjectUrl('https://labs.google/fx/vi/tools/flow')).toBe(false);
+  });
+  it('builds safe project folders for Video and Article Content', () => {
+    expect(contentProjectFolder({ type: 'video', contentId: 'ANCV-VID-2026-001' })).toBe('Projects/ANCV-VID-2026-001');
+    expect(contentProjectFolder({ type: 'article', contentId: 'ANCV-ART-2026-001' })).toBe('Projects/ANCV-ART-2026-001');
+    expect(() => contentProjectFolder({ type: 'article', contentId: 'ANCV-VID-2026-001' })).toThrow('LOCAL_FOLDER_METADATA_INVALID');
+  });
+  it.each([
+    ['get', '/v1/content/content-management-settings'],
+    ['put', '/v1/content/content-management-settings'],
+    ['post', '/v1/flow/local-commands/open-content-folder'],
+  ] as const)('protects Content Management endpoint %s %s', async (method, path) => {
+    const response = await request(createApp())[method](path).send({});
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('AUTH_REQUIRED');
   });
 });

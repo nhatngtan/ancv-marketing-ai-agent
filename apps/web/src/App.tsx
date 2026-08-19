@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, BarChart3, CalendarDays, Check, ChevronRight, CircleAlert, Clipboard, FileText,
   Globe2, HeartPulse, LayoutDashboard, Link2, LogIn, Menu, Plus, Search, Settings, Share2,
-  Sparkles, Video, X,
+  Sparkles, Table2, Video, X,
 } from 'lucide-react';
 import {
   connectorModeVi, connectorStatusVi, type ConnectorRecord, type ContentPriority, type ContentRecord, type ContentType,
@@ -14,6 +14,7 @@ import { StatCard } from './components/StatCard';
 import { ContentStudioPage } from './components/ContentStudio';
 import { CompanySettings } from './components/CompanySettings';
 import { MarketingDashboard, MarketingReportPage } from './components/MarketingDashboard';
+import { ContentManagementPage } from './components/ContentManagement';
 import ancvLogo from './assets/brand/ancv-logo.png';
 import ancvIcon from './assets/brand/ancv-icon.png';
 import { firebaseConfigured, loginWithGoogle } from './lib/firebase';
@@ -22,9 +23,9 @@ import { onAuthStateChanged, type User } from 'firebase/auth';
 import { DEFAULT_CONNECTORS } from '@ancv/shared';
 import { createContent, fetchBackendHealth, subscribeConnectors, subscribeContents, subscribeLocalAgents, testConnector, updateContent } from './lib/repository';
 
-type PageKey = 'overview' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
+type PageKey = 'overview' | 'content-management' | 'video' | 'article' | 'schedule' | 'social' | 'website' | 'seo' | 'reports' | 'connectors' | 'health' | 'settings';
 const nav: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
-  { key: 'overview', label: 'Tổng quan', icon: LayoutDashboard }, { key: 'video', label: 'Content Video', icon: Video },
+  { key: 'overview', label: 'Tổng quan', icon: LayoutDashboard }, { key: 'content-management', label: 'Quản lý nội dung', icon: Table2 }, { key: 'video', label: 'Content Video', icon: Video },
   { key: 'article', label: 'Content Bài viết', icon: FileText }, { key: 'schedule', label: 'Lịch đăng', icon: CalendarDays },
   { key: 'social', label: 'Mạng xã hội', icon: Share2 }, { key: 'website', label: 'Website', icon: Globe2 },
   { key: 'seo', label: 'SEO', icon: Search }, { key: 'reports', label: 'Báo cáo', icon: BarChart3 },
@@ -115,6 +116,7 @@ export default function App() {
         {!firebaseConfigured && <div className="config-banner"><CircleAlert size={18}/><div><strong>Firebase production chưa được kết nối</strong><span>Giao diện đang dùng dữ liệu demo cô lập. Không connector nào được tự động gọi.</span></div></div>}
         {firebaseConfigured && !authReady ? <section className="signin-panel"><span className="eyebrow">ĐANG XÁC MINH</span><h1>Đang tải phiên làm việc…</h1><p>Hệ thống đang kiểm tra quyền truy cập an toàn.</p></section> : firebaseConfigured && !user ? <SignInScreen onLogin={async () => { try { await loginWithGoogle(); } catch { setToast('Tài khoản chưa được cấp quyền truy cập.'); } }}/> : <>
           {page === 'overview' && <MarketingDashboard contents={contents} onCreateWork={() => setShowQuickCreate(true)} onOpenContent={(content) => { setPage(content.type === 'video' ? 'video' : 'article'); setOpenContentId(content.id); }} onToast={setToast}/>}
+          {page === 'content-management' && <ContentManagementPage contents={contents} localAgents={localAgents} onOpenContent={(content) => { setPage(content.type === 'video' ? 'video' : 'article'); setOpenContentId(content.id); }} onToast={setToast}/>}
           {contentType && <ContentStudioPage type={contentType} contents={contents.filter((item) => item.type === contentType)} localAgents={localAgents} openContentId={openContentId} onOpened={() => setOpenContentId(null)} onCreate={() => setShowCreate(contentType)} onToast={setToast} />}
           {page === 'connectors' && <ConnectorsPage connectors={connectors} onToast={setToast}/>} 
           {page === 'health' && <HealthPage connectors={connectors} localAgents={localAgents}/>}
@@ -258,10 +260,11 @@ export function CreateContentModal({ type, onClose, onSaved, createAction = crea
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setErrorMessage(''); const data = new FormData(event.currentTarget);
     const optional = (name: string) => { const value = String(data.get(name) ?? '').trim(); return value || undefined; };
+    const selectedPlatforms = options.filter((platform) => data.get(platform) === 'on');
     try {
       const content = type === 'video'
         ? await createAction({ type: 'video', title: String(data.get('title') ?? '').trim() })
-        : await createAction({ type: 'article', title: String(data.get('title') ?? '').trim(), topic: String(data.get('topic') ?? '').trim(), body: '', objective: optional('objective'), shortDescription: optional('emphasis'), sourceMaterial: optional('sourceMaterial'), notes: optional('notes'), desiredLength: optional('desiredLength'), platforms: options.filter((platform) => data.get(platform) === 'on') });
+        : await createAction({ type: 'article', title: String(data.get('topic') ?? '').trim(), topic: String(data.get('topic') ?? '').trim(), body: '', objective: optional('objective'), shortDescription: optional('emphasis'), sourceMaterial: optional('sourceMaterial'), notes: optional('notes'), desiredLength: optional('desiredLength'), platforms: selectedPlatforms.length > 0 ? selectedPlatforms : options });
       onSaved(content);
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error && /^[A-Z0-9_]+$/.test(String(error.code)) ? ` (${String(error.code)})` : '';
@@ -269,16 +272,15 @@ export function CreateContentModal({ type, onClose, onSaved, createAction = crea
     }
     finally { setBusy(false); }
   };
-  return <div className="modal-wrap"><button className="modal-scrim" onClick={onClose}/><form className="modal" onSubmit={submit}><div className="modal-head"><div><span className="eyebrow">TẠO MỚI</span><h2>{type === 'video' ? 'Content Video' : 'Content Bài viết'}</h2></div><button type="button" onClick={onClose}><X/></button></div>
+  return <div className="modal-wrap"><button className="modal-scrim" onClick={onClose}/><form className={`modal create-content-modal ${type === 'video' ? 'video-create-modal' : 'article-create-modal'}`} onSubmit={submit}><div className="modal-head"><div><span className="eyebrow">TẠO MỚI</span><h2>{type === 'video' ? 'Content Video' : 'Content Bài viết'}</h2></div><button type="button" onClick={onClose}><X/></button></div>
     {type === 'video' ? (
       <label>Tên / Chủ đề Video<input name="title" required autoFocus placeholder="Ví dụ: Giải pháp an ninh cho nhà máy"/></label>
     ) : (
-      <><label>Tiêu đề<input name="title" required placeholder="Nhập tiêu đề Content"/></label><label>Chủ đề<input name="topic" required placeholder="Chủ đề chiến dịch"/></label></>
+      <><label className="article-topic-field">Bạn muốn viết về chủ đề gì?<input name="topic" required autoFocus maxLength={300} placeholder="Ví dụ: Tiêu chí lựa chọn dịch vụ bảo vệ doanh nghiệp"/><small>Hệ thống sẽ tự chuẩn bị tiêu đề, SEO, cấu trúc bài, CTA, hình ảnh và nội dung theo từng kênh ở các bước tiếp theo.</small></label><label>Ghi chú thêm <span className="optional">(không bắt buộc)</span><textarea name="notes" rows={4} maxLength={10_000} placeholder="Thông tin cần lưu ý, dữ kiện đã xác minh hoặc yêu cầu về giọng văn"/></label></>
     )}
-    {type === 'article' && <><label>Mục tiêu bài<input name="objective" placeholder="Không bắt buộc"/></label><label>Thông tin cần nhấn mạnh<textarea name="emphasis" rows={3}/></label><label>Tài liệu nguồn<textarea name="sourceMaterial" rows={4} placeholder="Chỉ AI dùng các dữ kiện được cung cấp/xác minh"/></label><label>Ghi chú<textarea name="notes" rows={3}/></label><label>Độ dài mong muốn<input name="desiredLength" placeholder="Ví dụ: 800–1.000 từ"/></label></>}
-    {type === 'article' && <fieldset><legend>Nền tảng đích</legend><div className="checkboxes">{options.map((platform) => <label key={platform}><input type="checkbox" name={platform} defaultChecked/><span>{platformLabels[platform]}</span></label>)}</div></fieldset>}
+    {type === 'article' && <details className="advanced-section article-create-advanced"><summary>Tùy chọn nâng cao <ChevronRight size={16}/></summary><div className="advanced-section-body"><label>Mục tiêu bài<input name="objective" placeholder="Không bắt buộc"/></label><label>Thông tin cần nhấn mạnh<textarea name="emphasis" rows={3}/></label><label>Tài liệu nguồn<textarea name="sourceMaterial" rows={4} placeholder="Chỉ AI dùng các dữ kiện được cung cấp hoặc đã xác minh"/></label><label>Độ dài mong muốn<input name="desiredLength" placeholder="Ví dụ: 800–1.000 từ"/></label><fieldset><legend>Nền tảng đích</legend><div className="checkboxes">{options.map((platform) => <label key={platform}><input type="checkbox" name={platform} defaultChecked/><span>{platformLabels[platform]}</span></label>)}</div></fieldset></div></details>}
     {errorMessage && <div className="form-error" role="alert"><CircleAlert size={16}/><span>{errorMessage}</span></div>}
-    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : type === 'video' ? 'Tạo Video' : 'Tạo Content'}</button></div>
+    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : type === 'video' ? 'Tạo Video' : 'Tạo bài viết'}</button></div>
   </form></div>;
 }
 
