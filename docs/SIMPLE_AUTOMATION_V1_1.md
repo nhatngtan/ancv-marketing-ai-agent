@@ -24,7 +24,12 @@ UAT thật dùng một MP4 2,524,190 byte: tự đăng ký đúng một asset lo
 - WordPress tái sử dụng Post/Draft có marker ANCV, không tạo Post thứ hai; verify site, Post ID, status và thời gian schedule sau update.
 - Không sửa Yoast, plugin hoặc WordPress config.
 
-Automated tests đã PASS. Public/schedule external write UAT chưa chạy vì cần Owner cho phép riêng.
+Automated tests và external write UAT do Owner phê duyệt đã PASS:
+
+- YouTube: OAuth tối thiểu `youtube.force-ssl` + `yt-analytics.readonly`; cleanup fixture cũ PASS; đúng một video TEST được upload `private`, schedule xa, xác minh đúng channel/privacy/publishAt, rồi DELETE và read-back xác nhận không còn video hoặc nguy cơ tự public. Không retry và không có thời điểm public.
+- WordPress: đúng một Post TEST `804` được tạo ở trạng thái `future`, schedule `2026-10-18T12:52:23.681Z`, đúng site/title/slug và không duplicate; sau verify Post được DELETE, read-back xác nhận Post/slug không còn và không có nguy cơ tự publish. Không có thời điểm public.
+
+Kết luận: **SIMPLE AUTOMATION V1.1 = PASS**. Public production thật vẫn luôn cần người dùng chủ động duyệt/xác nhận.
 
 ## Manual Social
 

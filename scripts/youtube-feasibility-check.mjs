@@ -1,8 +1,7 @@
 const EXPECTED_CHANNEL_ID = "UCy-H7__UvdWcTbUax3RGDcA";
 const EXPECTED_CHANNEL_TITLE = "Giải Pháp An Ninh Cảnh Vệ";
 const REQUIRED_SCOPES = [
-  "https://www.googleapis.com/auth/youtube.readonly",
-  "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/yt-analytics.readonly",
 ];
 

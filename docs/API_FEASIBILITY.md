@@ -90,7 +90,7 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 ## Evidence Phase 2F-A — YouTube OAuth — 2026-08-11
 
 - Consent thực hiện bằng `ancv.marketing@gmail.com` qua Desktop OAuth client chuyên biệt và loopback callback localhost. Firebase Web Client hiện có không bị thay đổi.
-- Scope yêu cầu và scope thực cấp đều khớp: `youtube.readonly`, `youtube.upload`, `yt-analytics.readonly`. Client ID, client secret và refresh token được lưu riêng trong Secret Manager; không lưu token vào source, Git, Firestore hoặc tài liệu.
+- Scope ban đầu tại Phase 2F-A là `youtube.readonly`, `youtube.upload`, `yt-analytics.readonly`. Ngày 2026-08-19, scope được consent lại thành bộ tối thiểu cho lifecycle hiện tại: `youtube.force-ssl` + `yt-analytics.readonly`. Client ID, client secret và refresh token được lưu riêng trong Secret Manager; không lưu token vào source, Git, Firestore hoặc tài liệu.
 - Refresh-token exchange PASS. `channels.list(mine=true)` trả đúng **Giải Pháp An Ninh Cảnh Vệ**, Channel ID `UCy-H7__UvdWcTbUax3RGDcA`; không có account/channel mismatch.
 - `reports.query` thật với `channel==MINE`, khoảng `2026-08-01..2026-08-07`, metric `views`, dimension `day` trả HTTP 200 và 7 dòng.
 - Người dùng phê duyệt upload file `TD Di An BD 4.mp4`. `videos.insert` resumable tạo đúng 01 video `OSbbjviru7A`; đọc lại metadata xác nhận title `TEST PRIVATE - ANCV API - TD Di An BD 4`, đúng channel và `privacyStatus=private`.
@@ -99,8 +99,14 @@ Phải có đúng owner/resource, scope thực cấp, request nghiệp vụ prod
 
 ### Capability theo tài liệu — chưa phải PASS
 
-- YouTube: `videos.insert` hỗ trợ upload và metadata; project API chưa audit có upload bị giới hạn private. Analytics cần OAuth, gồm `yt-analytics.readonly` và hiện còn yêu cầu `youtube.readonly` cho query.
+- YouTube: `videos.insert` hỗ trợ upload và metadata; project API chưa audit có upload bị giới hạn private. `youtube.force-ssl` đã được request thật và dùng PASS cho private upload/schedule/delete; Analytics dùng `yt-analytics.readonly` và trả HTTP 200.
 - Facebook: Page post/text/link/photo/video được Pages API hỗ trợ; cần Page token và quyền thực cấp như `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`. Video/Insights permission và Page task phải đối chiếu lại bằng đúng App/API version; nhiều permission/Advanced Access cần App Review và Business Verification.
 - LinkedIn: Posts API hỗ trợ text, image, video và article; Organization publishing/reading cần `w_organization_social`/`r_organization_social` cùng Page role. Community Management là vetted product; quota cụ thể theo endpoint/app/member chỉ xác minh được trong Developer Portal sau request.
 - TikTok: Direct Post dùng `video.publish`; Upload-to-inbox dùng `video.upload`; init tối đa 6 requests/phút/user token. Unaudited client bị private/SELF_ONLY và active-user/posting caps. Guideline không chấp nhận Direct Post app chỉ phục vụ internal team/account; Display API không mặc định bằng marketing analytics đầy đủ.
 - Zalo: OA OpenAPI yêu cầu Zalo OA + Zalo App được cấp quyền; tài liệu Nội dung hỗ trợ tạo/xuất bản/cập nhật/quản lý bài viết và video. Zalo có thể yêu cầu gói OA/tính năng trả phí; analytics và hạn mức thực tế chưa xác minh.
+
+## Evidence Simple Automation V1.1 — External Write UAT — 2026-08-19
+
+- YouTube: cleanup TEST cũ bằng `videos.delete` và read-back PASS. Đúng một TEST mới được upload `private`, schedule xa, xác minh đúng channel/title/privacy/publishAt, sau đó DELETE và read-back xác nhận không còn video/schedule. Không retry, không lúc nào public, không còn future publish risk.
+- WordPress: đúng một Post TEST `804` được tạo tại `https://anninhcanhve.com` với status `future`, lịch `2026-10-18T12:52:23.681Z`; strict read-back xác nhận đúng title/slug/time và duplicate count = 1. Post được DELETE ngay, final read-back xác nhận Post/slug không còn. Không lúc nào public, không còn future publish risk.
+- Kết luận: **SIMPLE AUTOMATION V1.1 = PASS**. Public production thật không nằm trong UAT này và vẫn cần người dùng duyệt/xác nhận.

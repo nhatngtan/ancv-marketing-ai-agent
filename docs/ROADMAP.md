@@ -36,7 +36,7 @@ Implement phần PASS qua `PublishingProvider`/`AnalyticsProvider`; token trong 
 
 ### Simple Automation V1.1 — 2026-08-19
 
-Auto-detect Video Final local-first, UI **Đăng / Lên lịch** cho YouTube/WordPress, Manual Social Handoff một click và báo cáo tuần từ dữ liệu thật đã được triển khai. Auto Final UAT bằng MP4 local thật PASS, không dùng Scan/Register và không tạo duplicate. YouTube public/schedule và WordPress publish/schedule đã có automated tests nhưng external write UAT vẫn chờ Owner cho phép.
+Auto-detect Video Final local-first, UI **Đăng / Lên lịch** cho YouTube/WordPress, Manual Social Handoff một click và báo cáo tuần từ dữ liệu thật đã được triển khai. Auto Final UAT bằng MP4 local thật PASS, không dùng Scan/Register và không tạo duplicate. YouTube private schedule/delete và WordPress future/delete external write UAT đã PASS với fixture TEST, không lúc nào public và cleanup xác minh chắc chắn. **SIMPLE AUTOMATION V1.1 = PASS**.
 
 Social API onboarding Facebook/TikTok/Zalo/LinkedIn được **DEFERRED BY OWNER**. Production tiếp tục Manual Social; không triển khai OAuth/App Review/browser automation cho các nền tảng này.
 

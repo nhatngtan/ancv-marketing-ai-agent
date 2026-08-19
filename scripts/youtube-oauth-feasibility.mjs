@@ -7,8 +7,7 @@ const EXPECTED_CHANNEL_ID = "UCy-H7__UvdWcTbUax3RGDcA";
 const EXPECTED_CHANNEL_TITLE = "Giải Pháp An Ninh Cảnh Vệ";
 const LOGIN_HINT = "ancv.marketing@gmail.com";
 const SCOPES = [
-  "https://www.googleapis.com/auth/youtube.readonly",
-  "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/yt-analytics.readonly",
 ];
 
@@ -98,7 +97,7 @@ authorizationUrl.search = new URLSearchParams({
   scope: SCOPES.join(" "),
   access_type: "offline",
   prompt: "consent select_account",
-  include_granted_scopes: "true",
+  include_granted_scopes: "false",
   login_hint: LOGIN_HINT,
   state,
   code_challenge: codeChallenge,
